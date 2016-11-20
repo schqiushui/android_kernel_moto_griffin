@@ -836,14 +836,12 @@ static int lbs_cfg_scan(struct wiphy *wiphy,
  */
 
 void lbs_send_disconnect_notification(struct lbs_private *priv,
-					bool locally_generated)
+				      bool locally_generated)
 {
 	lbs_deb_enter(LBS_DEB_CFG80211);
 
-	cfg80211_disconnected(priv->dev,
-		0,
-		NULL, 0, locally_generated,
-		GFP_KERNEL);
+	cfg80211_disconnected(priv->dev, 0, NULL, 0, locally_generated,
+			      GFP_KERNEL);
 
 	lbs_deb_leave(LBS_DEB_CFG80211);
 }

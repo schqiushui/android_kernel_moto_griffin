@@ -240,6 +240,9 @@
 };
 
 &mdss_hdmi_tx {
+	qcom,conti-splash-enabled;
+	qcom,hdmi-tx-hpd = <&tlmm 34 0>;
+
 	pinctrl-names = "hdmi_hpd_active", "hdmi_ddc_active", "hdmi_cec_active",
 				"hdmi_active", "hdmi_sleep";
 	pinctrl-0 = <&mdss_hdmi_hpd_active &mdss_hdmi_ddc_suspend
@@ -618,6 +621,10 @@
 					"none";
 			};
 		};
+
+		qcom,power-on@800 {
+			qcom,pon-reset-off;
+		};
 	};
 
 	qcom,pm8994@0 {
@@ -796,6 +803,18 @@
 	status = "ok";
 };
 
+&spi_0 {
+	status = "ok";
+};
+
+&i2c_12 {
+	status = "disabled";
+};
+
+&spi_11 {
+	status = "ok";
+};
+
 &slim_msm {
 	tasha_codec {
 		qcom,cdc-micbias1-ext-cap;
@@ -818,13 +837,13 @@
 
 &cam_sensor_mclk1_active { /* MCLK1 */
 	config {
-		drive-strength = <8>; /* 8 MA */
+		drive-strength = <4>; /* 8 MA */
 	};
 };
 
 &cam_sensor_mclk1_suspend { /* MCLK1 */
 	config {
-		drive-strength = <8>; /* 8 MA */
+		drive-strength = <4>; /* 8 MA */
 	};
 };
 
@@ -838,4 +857,10 @@
 	config {
 		drive-strength = <8>; /* 8 MA */
 	};
+};
+
+&wil6210 {
+	status = "ok";
+	/delete-property/ qcom,wigig-en;
+	/delete-property/ qcom,sleep-clk-en;
 };

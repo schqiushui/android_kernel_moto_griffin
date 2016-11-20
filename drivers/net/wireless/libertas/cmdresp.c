@@ -19,10 +19,13 @@
  * reset link state etc.
  *
  * @priv:	A pointer to struct lbs_private structure
+ * @locally_generated: indicates disconnect was requested locally
+ *		(usually by userspace)
  *
  * returns:	n/a
  */
-void lbs_mac_event_disconnected(struct lbs_private *priv, bool locally_generated)
+void lbs_mac_event_disconnected(struct lbs_private *priv,
+				bool locally_generated)
 {
 	if (priv->connect_status != LBS_CONNECTED)
 		return;

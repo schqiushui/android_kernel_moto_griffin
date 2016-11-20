@@ -29,6 +29,15 @@
  */
 #define MSMFB_MDP_SET_CFG _IOW(MDP_IOCTL_MAGIC, 130, \
 					      struct mdp_set_cfg)
+/*
+ * To allow proper structure padding for 64bit/32bit target
+ */
+#ifdef __LP64
+#define MDP_LAYER_COMMIT_V1_PAD 4
+#else
+#define MDP_LAYER_COMMIT_V1_PAD 5
+#endif
+
 
 /**********************************************************************
 LAYER FLAG CONFIGURATION
@@ -296,6 +305,18 @@ struct mdp_output_layer {
 	uint32_t			reserved[6];
 };
 
+/* Enable Deterministic Frame Rate Control (FRC) */
+#define MDP_VIDEO_FRC_ENABLE (1 << 0)
+
+struct mdp_frc_info {
+	/* flags to control FRC feature */
+	uint32_t flags;
+	/* video frame count per frame */
+	uint32_t frame_cnt;
+	/* video timestamp per frame in millisecond unit */
+	int64_t timestamp;
+};
+
 /*
  * Commit structure holds layer stack send by client for validate and commit
  * call. If layers are different between validate and commit call then commit
@@ -362,8 +383,11 @@ struct mdp_layer_commit_v1 {
 	 */
 	int			retire_fence;
 
+	/* FRC info per device which contains frame count and timestamp */
+	struct mdp_frc_info __user *frc_info;
+
 	/* 32-bits reserved value for future usage. */
-	uint32_t		reserved[6];
+	uint32_t		reserved[MDP_LAYER_COMMIT_V1_PAD];
 };
 
 /*

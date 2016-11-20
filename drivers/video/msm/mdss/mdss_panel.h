@@ -20,10 +20,18 @@
 #include <linux/types.h>
 #include <linux/debugfs.h>
 
+#define KHZ_TO_HZ 1000
+
 /* panel id type */
 struct panel_id {
 	u16 id;
 	u16 type;
+};
+
+enum fps_resolution {
+	FPS_RESOLUTION_DEFAULT,
+	FPS_RESOLUTION_HZ,
+	FPS_RESOLUTION_KHZ,
 };
 
 #define DEFAULT_FRAME_RATE	60
@@ -337,6 +345,8 @@ struct lcd_panel_info {
 	/* Pad height */
 	u32 yres_pad;
 	u32 frame_rate;
+	u32 h_polarity;
+	u32 v_polarity;
 };
 
 
@@ -493,7 +503,10 @@ struct dynamic_fps_data {
  * @DFPS_IMMEDIATE_PORCH_UPDATE_MODE_VFP: update fps using vertical timings
  * @DFPS_IMMEDIATE_PORCH_UPDATE_MODE_HFP: update fps using horizontal timings
  * @DFPS_IMMEDIATE_MULTI_UPDATE_MODE_CLK_HFP: update fps using both horizontal
- *    timings and clock.
+ *  timings and clock.
+ * @DFPS_IMMEDIATE_MULTI_MODE_HFP_CALC_CLK: update fps using both
+ *  horizontal timings, clock need to be caculate base on new clock and
+ *  porches.
  * @DFPS_MODE_MAX: defines maximum limit of supported modes.
  */
 enum dynamic_fps_update {
@@ -502,6 +515,7 @@ enum dynamic_fps_update {
 	DFPS_IMMEDIATE_PORCH_UPDATE_MODE_VFP,
 	DFPS_IMMEDIATE_PORCH_UPDATE_MODE_HFP,
 	DFPS_IMMEDIATE_MULTI_UPDATE_MODE_CLK_HFP,
+	DFPS_IMMEDIATE_MULTI_MODE_HFP_CALC_CLK,
 	DFPS_MODE_MAX
 };
 
@@ -877,6 +891,7 @@ int mdss_panel_debufs_stats_opr_alloc(struct mdss_panel_debugfs_stats_opr *opr,
 
 struct mdss_panel_debugfs_info {
 	struct dentry *root;
+	struct dentry *parent;
 	struct mdss_panel_info panel_info;
 	u32 override_flag;
 	struct mdss_panel_debugfs_info *next;
@@ -888,13 +903,16 @@ struct mdss_panel_debugfs_info {
  * mdss_get_panel_framerate() - get panel frame rate based on panel information
  * @panel_info:	Pointer to panel info containing all panel information
  */
-static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info)
+static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info,
+					   u32 flags)
 {
 	u32 frame_rate, pixel_total;
 	u64 rate;
 
-	if (panel_info == NULL)
-		return DEFAULT_FRAME_RATE;
+	if (panel_info == NULL) {
+		frame_rate = DEFAULT_FRAME_RATE;
+		goto end;
+	}
 
 	switch (panel_info->type) {
 	case MIPI_VIDEO_PANEL:
@@ -922,7 +940,7 @@ static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info)
 			  panel_info->lcdc.v_pulse_width +
 			  panel_info->yres);
 		if (pixel_total) {
-			rate = panel_info->clk_rate;
+			rate = panel_info->clk_rate * KHZ_TO_HZ;
 			do_div(rate, pixel_total);
 			frame_rate = (u32)rate;
 		} else {
@@ -930,6 +948,15 @@ static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info)
 		}
 		break;
 	}
+end:
+	if (flags == FPS_RESOLUTION_KHZ) {
+		if (!(frame_rate / KHZ_TO_HZ))
+			frame_rate *= KHZ_TO_HZ;
+	} else if (flags == FPS_RESOLUTION_HZ) {
+		if (frame_rate / KHZ_TO_HZ)
+			frame_rate /= KHZ_TO_HZ;
+	}
+
 	return frame_rate;
 }
 
