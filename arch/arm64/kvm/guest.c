@@ -291,6 +291,12 @@ int __attribute_const__ kvm_target_cpu(void)
 			return KVM_ARM_TARGET_XGENE_POTENZA;
 		};
 		break;
+	case ARM_CPU_IMP_QCOM:
+		switch (part_number & QCOM_CPU_PART_MASK) {
+		case QCOM_CPU_PART_KRYO:
+			return KVM_ARM_TARGET_QCOM_KRYO;
+		}
+		break;
 	};
 
 	return -EINVAL;
