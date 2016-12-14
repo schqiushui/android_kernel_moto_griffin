@@ -783,6 +783,9 @@ struct mdss_panel_info {
 	u32 forced_tx_mode_ftr_enabled;
 	u32 forced_tx_mode_state;
 	bool opr_stats_enabled;
+
+	/* persistence mode on/off */
+	bool persist_mode;
 };
 
 struct mdss_panel_timing {
@@ -822,6 +825,7 @@ struct mdss_panel_data {
 	struct mdss_panel_info panel_info;
 	void (*set_backlight) (struct mdss_panel_data *pdata, u32 bl_level);
 	int (*set_param)(struct mdss_panel_data *pdata, u16 id, u16 value);
+	int (*apply_display_setting) (struct mdss_panel_data *pdata, u32 mode);
 	unsigned char *mmss_cc_base;
 
 	/**
