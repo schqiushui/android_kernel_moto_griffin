@@ -84,3 +84,4 @@ obj-$(CONFIG_HD3SS460_MUX) += hd3ss460_mux.o
 obj-$(CONFIG_USB3813) += usb3813_hub.o
 obj-$(CONFIG_MODS_MODBUS_EXT) += modbus_ext.o
 obj-$(CONFIG_MOTOMODS) += motomods/
+obj-$(CONFIG_FORCE_FAST_CHARGE)		+= fastcharge/
