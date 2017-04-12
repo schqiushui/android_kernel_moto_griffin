@@ -7353,8 +7353,6 @@ VOS_STATUS WDA_open(v_VOID_t *vos_context, v_VOID_t *os_ctx,
 	wma_handle->ssdp = mac_params->ssdp;
 	wma_handle->enable_mc_list = mac_params->enable_mc_list;
 	wma_handle->enable_bcst_ptrn = mac_params->enable_bcst_ptrn;
-	wma_handle->bpf_packet_filter_enable =
-		mac_params->bpf_packet_filter_enable;
 #ifdef FEATURE_WLAN_RA_FILTERING
 	wma_handle->IsRArateLimitEnabled = mac_params->IsRArateLimitEnabled;
 	wma_handle->RArateLimitInterval = mac_params->RArateLimitInterval;
@@ -9207,8 +9205,14 @@ VOS_STATUS wma_get_buf_start_scan_cmd(tp_wma_handle wma_handle,
 		    }
 		    if (wma_is_STA_active(wma_handle) ||
 			wma_is_P2P_CLI_active(wma_handle)) {
-			/* Typical background scan. Disable burst scan for now. */
-			cmd->burst_duration = 0;
+			if (scan_req->burst_scan_duration)
+				cmd->burst_duration =
+						scan_req->burst_scan_duration;
+			else
+				/* Typical background scan.
+				 * Disable burst scan for now.
+				 */
+				cmd->burst_duration = 0;
 			break;
 		    }
 		} while (0);
@@ -19675,7 +19679,6 @@ static VOS_STATUS wma_pno_start(tp_wma_handle wma, tpSirPNOScanReq pno)
 	WMA_LOGD("fast_scan_period: %d msec slow_scan_period: %d msec",
 			cmd->fast_scan_period, cmd->slow_scan_period);
 	WMA_LOGD("fast_scan_max_cycles: %d", cmd->fast_scan_max_cycles);
-
 	buf_ptr += sizeof(wmi_nlo_config_cmd_fixed_param);
 
 	cmd->no_of_ssids = MIN(pno->ucNetworksCount, WMI_NLO_MAX_SSIDS);
@@ -25008,7 +25011,7 @@ static VOS_STATUS wma_enable_arp_ns_offload(tp_wma_handle wma,
 	WMI_SET_ARP_NS_OFFLOAD_CMD_fixed_param *cmd;
 	A_UINT8* buf_ptr;
 	wmi_buf_t buf;
-	int32_t len;
+	uint32_t len;
 	VOS_STATUS status = VOS_STATUS_SUCCESS;
 	u_int8_t vdev_id;
 	tpSirHostOffloadReq ns_offload_req;
@@ -25040,6 +25043,11 @@ static VOS_STATUS wma_enable_arp_ns_offload(tp_wma_handle wma,
 		ns_offload_req = hostoffloadreq;
 		arp_offload_req = &wma->interfaces[vdev_id].arp_offload_req;
 		count = hostoffloadreq->num_ns_offload_count;
+	}
+
+	if (count >= SIR_MAC_NUM_TARGET_IPV6_NS_OFFLOAD_NA) {
+		status = VOS_STATUS_E_INVAL;
+		goto err_vdev;
 	}
 
 	len = sizeof(WMI_SET_ARP_NS_OFFLOAD_CMD_fixed_param) +
@@ -33676,20 +33684,6 @@ static inline void wma_update_target_vht_cap(tp_wma_handle wh,
 }
 #endif	/* #ifdef WLAN_FEATURE_11AC */
 
-#ifdef FEATURE_WLAN_RA_FILTERING
-static void wma_update_ra_rate_limit(tp_wma_handle wma_handle,
-				     struct hdd_tgt_cfg *cfg)
-{
-	cfg->is_ra_rate_limit_enabled = wma_handle->IsRArateLimitEnabled;
-}
-#else
-static void wma_update_ra_rate_limit(tp_wma_handle wma_handle,
-				     struct hdd_tgt_cfg *cfg)
-{
-}
-#endif
-
-
 static void wma_update_hdd_cfg(tp_wma_handle wma_handle)
 {
 	struct hdd_tgt_cfg hdd_tgt_cfg;
@@ -33736,7 +33730,6 @@ static void wma_update_hdd_cfg(tp_wma_handle wma_handle)
 	hdd_tgt_cfg.wmi_max_len = wmi_get_max_msg_len(wma_handle->wmi_handle)
 					- WMI_TLV_HEADROOM;
 	hdd_tgt_cfg.bpf_enabled = wma_handle->bpf_enabled;
-	wma_update_ra_rate_limit(wma_handle, &hdd_tgt_cfg);
 	wma_update_hdd_cfg_ndp(wma_handle, &hdd_tgt_cfg);
 	wma_setup_egap_support(&hdd_tgt_cfg, wma_handle);
         hdd_tgt_cfg.max_mc_addr_list =
@@ -33918,19 +33911,6 @@ static void wma_send_time_stamp_sync_cmd(void *data)
 		WMA_LOGE("Failed to start the firmware time sync timer");
 }
 
-#ifdef FEATURE_WLAN_RA_FILTERING
-static void wma_update_ra_limit(tp_wma_handle wma_handle)
-{
-	if (wma_handle->bpf_enabled)
-		wma_handle->IsRArateLimitEnabled = false;
-}
-#else
-static void wma_update_ra__limit(tp_wma_handle handle)
-{
-}
-#endif
-
-
 /* Process service ready event and send wmi_init command */
 v_VOID_t wma_rx_service_ready_event(WMA_HANDLE handle, void *cmd_param_info)
 {
@@ -34021,10 +34001,9 @@ v_VOID_t wma_rx_service_ready_event(WMA_HANDLE handle, void *cmd_param_info)
 	wma_handle->ap_arpns_support =
 		WMI_SERVICE_IS_ENABLED(wma_handle->wmi_service_bitmap,
 					WMI_SERVICE_AP_ARPNS_OFFLOAD);
-	wma_handle->bpf_enabled = (wma_handle->bpf_packet_filter_enable &&
+	wma_handle->bpf_enabled =
 		WMI_SERVICE_IS_ENABLED(wma_handle->wmi_service_bitmap,
-					WMI_SERVICE_BPF_OFFLOAD));
-	wma_update_ra_limit(wma_handle);
+					WMI_SERVICE_BPF_OFFLOAD);
 	if (WMI_SERVICE_IS_ENABLED(wma_handle->wmi_service_bitmap,
 				WMI_SERVICE_CSA_OFFLOAD)) {
 		WMA_LOGD("%s: FW support CSA offload capability", __func__);
@@ -35844,6 +35823,11 @@ static int wma_update_fw_tdls_state(WMA_HANDLE handle, void *pwmaTdlsparams)
 		cmd->state = WMI_TDLS_ENABLE_ACTIVE;
 	} else if (WMA_TDLS_SUPPORT_ACTIVE_EXTERNAL_CONTROL == tdls_mode) {
 		cmd->state = WMI_TDLS_ENABLE_ACTIVE_EXTERNAL_CONTROL;
+#if defined(CONFIG_MSM8992) || defined(CONFIG_MSM8994)//IKSWN-6386: Unable to set tdls up
+                /*MSM8992 and MSM8994 uses RM 2.0 which doesnt support external trigger,
+                 hence force to use ACTIVE similar to in M/L driver*/
+                cmd->state = WMI_TDLS_ENABLE_ACTIVE;
+#endif
 	} else {
 		cmd->state = WMI_TDLS_DISABLE;
 	}

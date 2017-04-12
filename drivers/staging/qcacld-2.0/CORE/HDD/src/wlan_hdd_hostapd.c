@@ -2846,9 +2846,12 @@ static __iw_softap_setparam(struct net_device *dev,
 {
     hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
     tHalHandle hHal;
-    int *value = (int *)extra;
-    int sub_cmd = value[0];
-    int set_value = value[1];
+    //BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic
+    int *value;
+    int sub_cmd;
+    int set_value;
+    int *tmp = (int *) extra;
+    //END IKDREL3KK-11113
     eHalStatus status;
     int ret = 0; /* success */
     v_CONTEXT_t pVosContext;
@@ -2865,6 +2868,28 @@ static __iw_softap_setparam(struct net_device *dev,
     ret = wlan_hdd_validate_context(pHddCtx);
     if (0 != ret)
         return -EINVAL;
+
+    //BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic
+    if(tmp[0] < 0 || tmp[0] > QCASAP_SET_PHYMODE)
+    {
+        value = (int *)(wrqu->data.pointer);
+    }
+    else
+    {
+        value = (int *)extra;
+    }
+
+    sub_cmd = value[0];
+    set_value = value[1];
+    //END IKDREL3KK-11113
+
+    if (!pHostapdAdapter || !pHostapdAdapter->pHddCtx)
+    {
+       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                 "%s: either hostapd Adapter is null or HDD ctx is null",
+                 __func__);
+       return -1;
+    }
 
     hHal = WLAN_HDD_GET_HAL_CTX(pHostapdAdapter);
     if (!hHal) {
@@ -3905,7 +3930,7 @@ int __iw_softap_modify_acl(struct net_device *dev, struct iw_request_info *info,
 #ifndef WLAN_FEATURE_MBSSID
     v_CONTEXT_t pVosContext = hdd_ctx->pvosContext;
 #endif
-    v_BYTE_t *value = (v_BYTE_t*)extra;
+    v_BYTE_t *value = (v_BYTE_t*)(wrqu->data.pointer);
     v_U8_t pPeerStaMac[VOS_MAC_ADDR_SIZE];
     int listType, cmd, i;
     int ret;
@@ -4279,7 +4304,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
     /* iwpriv tool or framework calls this ioctl with
      * data passed in extra (less than 16 octets);
      */
-    peerMacAddr = (v_U8_t *)(extra);
+    peerMacAddr = (v_U8_t *)(wrqu->data.pointer);
 
     hddLog(LOG1, "%s data "  MAC_ADDRESS_STR,
            __func__, MAC_ADDR_ARRAY(peerMacAddr));

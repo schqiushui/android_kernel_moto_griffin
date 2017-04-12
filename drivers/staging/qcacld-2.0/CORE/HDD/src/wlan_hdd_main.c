@@ -4606,6 +4606,8 @@ static int hdd_set_rx_filter(hdd_adapter_t *adapter, bool action,
 				    MAC_ADDR_ARRAY(filter->multicastAddr[j]));
 				j++;
 			}
+			if (j == SIR_MAX_NUM_MULTICAST_ADDRESS)
+				break;
 		}
 		filter->ulMulticastAddrCnt = j;
 		/* Set rx filter */
@@ -8157,7 +8159,7 @@ static void hdd_update_tgt_services(hdd_context_t *hdd_ctx,
     cfg_ini->fEnableTDLSSupport &= cfg->en_tdls;
     cfg_ini->fEnableTDLSOffChannel = cfg_ini->fEnableTDLSOffChannel &&
                                      cfg->en_tdls_offchan;
-    cfg_ini->fEnableTDLSBufferSta = cfg_ini->fEnableTDLSOffChannel &&
+    cfg_ini->fEnableTDLSBufferSta = cfg_ini->fEnableTDLSBufferSta &&
                                     cfg->en_tdls_uapsd_buf_sta;
     if (cfg_ini->fTDLSUapsdMask && cfg->en_tdls_uapsd_sleep_sta)
     {
@@ -8766,19 +8768,6 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 }
 #endif  /* #ifdef WLAN_FEATURE_11AC */
 
-#ifdef FEATURE_WLAN_RA_FILTERING
-static void hdd_update_ra_rate_limit(hdd_context_t *hdd_ctx,
-				     struct hdd_tgt_cfg *cfg)
-{
-    hdd_ctx->cfg_ini->IsRArateLimitEnabled = cfg->is_ra_rate_limit_enabled;
-}
-#else
-static void hdd_update_ra_rate_limit(hdd_context_t *hdd_ctx,
-				     struct hdd_tgt_cfg *cfg)
-{
-}
-#endif
-
 void hdd_update_tgt_cfg(void *context, void *param)
 {
     hdd_context_t *hdd_ctx = (hdd_context_t *)context;
@@ -8853,12 +8842,7 @@ void hdd_update_tgt_cfg(void *context, void *param)
     hdd_ctx->fine_time_meas_cap_target = cfg->fine_time_measurement_cap;
     hddLog(LOG1, FL("fine_time_measurement_cap: 0x%x"),
              hdd_ctx->cfg_ini->fine_time_meas_cap);
-
-    hddLog(LOG1, FL("Target BPF %d Host BPF %d"),
-             cfg->bpf_enabled, hdd_ctx->cfg_ini->bpf_packet_filter_enable);
-    hdd_ctx->bpf_enabled = (cfg->bpf_enabled &&
-                            hdd_ctx->cfg_ini->bpf_packet_filter_enable);
-    hdd_update_ra_rate_limit(hdd_ctx, cfg);
+    hdd_ctx->bpf_enabled = cfg->bpf_enabled;
 
     /*
      * If BPF is enabled, maxWowFilters set to WMA_STA_WOW_DEFAULT_PTRN_MAX
@@ -13618,6 +13602,24 @@ VOS_STATUS hdd_set_sme_chan_list(hdd_context_t *hdd_ctx)
                               hdd_ctx->reg.cc_src);
 }
 
+void hdd_set_dfs_regdomain(hdd_context_t *phddctx, bool restore)
+{
+    if(!restore) {
+        if (vos_nv_get_dfs_region(&phddctx->hdd_dfs_regdomain)) {
+             hddLog(VOS_TRACE_LEVEL_FATAL,
+                    "%s: unable to retrieve dfs region from hdd",
+                    __func__);
+        }
+    }
+    else {
+        if (vos_nv_set_dfs_region(phddctx->hdd_dfs_regdomain)) {
+             hddLog(VOS_TRACE_LEVEL_FATAL,
+                    "%s: unable to set dfs region",
+                    __func__);
+        }
+    }
+}
+
 /**
  * hdd_is_5g_supported() - to know if ini configuration supports 5GHz
  * @pHddCtx: Pointer to the hdd context
@@ -14567,7 +14569,6 @@ static int hdd_cnss_wlan_mac(hdd_context_t *hdd_ctx)
  */
 static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 {
-	VOS_STATUS status;
 	int ret;
 
 	ret = hdd_cnss_wlan_mac(hdd_ctx);
@@ -14575,15 +14576,14 @@ static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 	if (ret == 0)
 		return ret;
 
+        // IKSWN-1989 - Moto fpx478
 	hddLog(LOGW, FL("Can't update MAC via platform driver ret: %d"), ret);
-
-	status = hdd_update_mac_config(hdd_ctx);
-	if (status != VOS_STATUS_SUCCESS) {
-		hddLog(LOGW,
-		      FL("Failed to update MAC from %s status: %d"),
-		      WLAN_MAC_FILE, status);
-		return -EIO;
-	}
+        if (VOS_STATUS_SUCCESS != hdd_update_mac_config(hdd_ctx)) {
+            if (VOS_STATUS_SUCCESS != hdd_update_mac_serial(hdd_ctx)) {
+                 hddLog(LOGW, FL("Failed to update MAC from %s"), WLAN_MAC_FILE);
+                 return -EIO;
+            }
+        } // END IKSWN-1989
 	return 0;
 }
 /**---------------------------------------------------------------------------
@@ -16303,6 +16303,85 @@ tVOS_CONCURRENCY_MODE hdd_get_concurrency_mode ( void )
                                         pHddCtx->concurrency_mode);
           return (tVOS_CONCURRENCY_MODE)pHddCtx->concurrency_mode;
        }
+    }
+
+    /* we are in an invalid state :( */
+    hddLog(LOGE, "%s: Invalid context", __func__);
+    return VOS_STA;
+}
+
+// BEGIN MOTOROLA IKJB42MAIN-274, dpn473, 01/02/2013, Add flag to disable/enable MCC mode
+v_U8_t hdd_get_mcc_mode( void )
+{
+    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
+    hdd_context_t *pHddCtx;
+
+    if (NULL != pVosContext)
+    {
+        pHddCtx = vos_get_context( VOS_MODULE_ID_HDD, pVosContext);
+        if (NULL != pHddCtx)
+        {
+            return (v_U8_t)pHddCtx->cfg_ini->enableMCC;
+        }
+    }
+    /* we are in an invalid state :( */
+    hddLog(LOGE, "%s: Invalid context", __func__);
+    return (v_U8_t)0;
+}
+// END IKJB42MAIN-274
+
+/* Decide whether to allow/not the apps power collapse.
+ * Allow apps power collapse if we are in connected state.
+ * if not, allow only if we are in IMPS  */
+v_BOOL_t hdd_is_apps_power_collapse_allowed(hdd_context_t* pHddCtx)
+{
+    tPmcState pmcState = pmcGetPmcState(pHddCtx->hHal);
+    tANI_BOOLEAN scanRspPending;
+    tANI_BOOLEAN inMiddleOfRoaming;
+    hdd_config_t *pConfig = pHddCtx->cfg_ini;
+    hdd_adapter_list_node_t *pAdapterNode = NULL, *pNext = NULL;
+    hdd_adapter_t *pAdapter = NULL;
+    VOS_STATUS status;
+    tVOS_CONCURRENCY_MODE concurrent_state = 0;
+
+    if (VOS_STA_SAP_MODE == hdd_get_conparam())
+        return TRUE;
+
+    concurrent_state = hdd_get_concurrency_mode();
+
+#ifdef WLAN_ACTIVEMODE_OFFLOAD_FEATURE
+    if(((concurrent_state == (VOS_STA | VOS_P2P_CLIENT)) ||
+        (concurrent_state == (VOS_STA | VOS_P2P_GO))) &&
+        (IS_ACTIVEMODE_OFFLOAD_FEATURE_ENABLE))
+        return TRUE;
+#endif
+
+    /*loop through all adapters. TBD fix for Concurrency */
+    status = hdd_get_front_adapter ( pHddCtx, &pAdapterNode );
+    while ( NULL != pAdapterNode && VOS_STATUS_SUCCESS == status )
+    {
+        pAdapter = pAdapterNode->pAdapter;
+        if ( (WLAN_HDD_INFRA_STATION == pAdapter->device_mode)
+          || (WLAN_HDD_P2P_CLIENT == pAdapter->device_mode) )
+        {
+            scanRspPending = csrNeighborRoamScanRspPending(pHddCtx->hHal,
+                                                    pAdapter->sessionId);
+            inMiddleOfRoaming = csrNeighborMiddleOfRoaming(pHddCtx->hHal,
+                                                    pAdapter->sessionId);
+            if (((pConfig->fIsImpsEnabled || pConfig->fIsBmpsEnabled)
+                 && (pmcState != IMPS && pmcState != BMPS
+                  &&  pmcState != STOPPED && pmcState != STANDBY)) ||
+                 (eANI_BOOLEAN_TRUE == scanRspPending) ||
+                 (eANI_BOOLEAN_TRUE == inMiddleOfRoaming))
+            {
+                hddLog( LOGE, "%s: do not allow APPS power collapse-"
+                    "pmcState = %d scanRspPending = %d inMiddleOfRoaming = %d",
+                    __func__, pmcState, scanRspPending, inMiddleOfRoaming );
+                return FALSE;
+            }
+        }
+        status = hdd_get_next_adapter ( pHddCtx, pAdapterNode, &pNext );
+        pAdapterNode = pNext;
     }
 
     /* we are in an invalid state :( */

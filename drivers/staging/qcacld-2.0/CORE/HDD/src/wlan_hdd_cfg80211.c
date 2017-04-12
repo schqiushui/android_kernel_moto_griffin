@@ -10563,7 +10563,7 @@ __wlan_hdd_cfg80211_bpf_offload(struct wiphy *wiphy,
 	}
 
 	if (!hdd_ctx->bpf_enabled) {
-		hddLog(LOGE, FL("BPF offload is not supported/enabled"));
+		hddLog(LOGE, FL("BPF offload is not supported by firmware"));
 		return -ENOTSUPP;
 	}
 
@@ -16052,6 +16052,15 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
                           "%s: After removing duplcates StaParams.supported_channels_len: %d",
                           __func__, StaParams.supported_channels_len);
             }
+            if (params->supported_oper_classes_len >
+                SIR_MAC_MAX_SUPP_OPER_CLASSES) {
+                VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                          "received oper classes:%d, resetting it to max supported %d",
+                          params->supported_oper_classes_len,
+                          SIR_MAC_MAX_SUPP_OPER_CLASSES);
+                params->supported_oper_classes_len =
+                    SIR_MAC_MAX_SUPP_OPER_CLASSES;
+            }
             vos_mem_copy(StaParams.supported_oper_classes,
                          params->supported_oper_classes,
                          params->supported_oper_classes_len);
@@ -16109,8 +16118,7 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
             }
 
             if (pHddCtx->cfg_ini->fEnableTDLSWmmMode &&
-                (params->ht_capa || params->vht_capa ||
-                (params->sta_flags_set & BIT(NL80211_STA_FLAG_WME))))
+                (params->sta_flags_set & BIT(NL80211_STA_FLAG_WME)))
                 is_qos_wmm_sta = true;
 
             hddLog(VOS_TRACE_LEVEL_INFO,
@@ -22255,11 +22263,11 @@ static int __wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
      * slow_scan_period. This is less frequent scans and firmware shall be
      * in slow_scan_period mode until next PNO Start.
      */
-    pPnoRequest->fast_scan_period = request->interval;
-    pPnoRequest->fast_scan_max_cycles =
-                              pHddCtx->cfg_ini->configPNOScanTimerRepeatValue;
-    pPnoRequest->slow_scan_period = pHddCtx->cfg_ini->pno_slow_scan_multiplier *
-                                        pPnoRequest->fast_scan_period;
+    //BEGIN MOT a19110 IKSWM-31041 Modify PNO timers
+    pPnoRequest->fast_scan_period = 45000;
+    pPnoRequest->fast_scan_max_cycles = 7;
+    pPnoRequest->slow_scan_period = 480000;
+    //END IKSWM-31041
 
     hddLog(LOG1, "Base scan interval: %d sec PNOScanTimerRepeatValue: %d",
            (request->interval / 1000),
