@@ -464,6 +464,10 @@ static int mmc_devfreq_set_target(struct device *dev,
 	struct mmc_devfeq_clk_scaling *clk_scaling;
 	int err = 0;
 	int abort;
+	unsigned long pflags = current->flags;
+
+	/* Ensure scaling would happen even in memory pressure conditions */
+	current->flags |= PF_MEMALLOC;
 
 	if (!(host && freq)) {
 		pr_err("%s: unexpected host/freq parameter\n", __func__);
@@ -522,6 +526,7 @@ static int mmc_devfreq_set_target(struct device *dev,
 	mmc_host_clk_release(host);
 	mmc_release_host(host);
 out:
+	tsk_restore_flags(current, pflags, PF_MEMALLOC);
 	return err;
 }
 
@@ -1583,7 +1588,6 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 				    struct mmc_async_req *areq, int *error)
 {
 	int err = 0;
-	int start_err = 0;
 	struct mmc_async_req *data = host->areq;
 
 	/* Prepare a new request */
@@ -1615,7 +1619,7 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 		trace_mmc_blk_rw_start(areq->mrq->cmd->opcode,
 				       areq->mrq->cmd->arg,
 				       areq->mrq->data);
-		start_err = __mmc_start_data_req(host, areq->mrq);
+		__mmc_start_data_req(host, areq->mrq);
 	}
 
 	if (host->areq)

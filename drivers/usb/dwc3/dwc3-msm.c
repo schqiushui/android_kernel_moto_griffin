@@ -290,6 +290,7 @@ struct dwc3_msm {
 	struct notifier_block	dwc3_cpu_notifier;
 	struct notifier_block	usbdev_nb;
 	bool			hc_died;
+	bool			host_only_mode;
 
 	int  pwr_event_irq;
 	atomic_t                in_p3;
@@ -4419,7 +4420,8 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				pm_runtime_get_noresume(mdwc->dev);
 				dwc3_initialize(mdwc);
 				/* check dp/dm for SDP & runtime_put if !SDP */
-				if (mdwc->detect_dpdm_floating) {
+				if (mdwc->detect_dpdm_floating &&
+					mdwc->chg_type == DWC3_SDP_CHARGER) {
 					dwc3_check_float_lines(mdwc);
 					if (mdwc->chg_type != DWC3_SDP_CHARGER)
 						break;

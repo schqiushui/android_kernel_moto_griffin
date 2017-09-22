@@ -3580,6 +3580,10 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 				MSMFB_ATOMIC_COMMIT, true, false);
 			if (mfd->panel.type == WRITEBACK_PANEL) {
 				output_layer = commit_v1->output_layer;
+				if (!output_layer) {
+					pr_err("Output layer is null\n");
+					goto end;
+				}
 				wb_change = !mdss_fb_is_wb_config_same(mfd,
 						commit_v1->output_layer);
 				if (wb_change) {
@@ -4934,6 +4938,15 @@ static int __ioctl_wait_idle(struct msm_fb_data_type *mfd, u32 cmd)
 	return ret;
 }
 
+static bool check_not_supported_ioctl(u32 cmd)
+{
+	return((cmd == MSMFB_OVERLAY_SET) || (cmd == MSMFB_OVERLAY_UNSET) ||
+		(cmd == MSMFB_OVERLAY_GET) || (cmd == MSMFB_OVERLAY_PREPARE) ||
+		(cmd == MSMFB_DISPLAY_COMMIT) || (cmd == MSMFB_OVERLAY_PLAY) ||
+		(cmd == MSMFB_BUFFER_SYNC) || (cmd == MSMFB_OVERLAY_QUEUE) ||
+		(cmd == MSMFB_NOTIFY_UPDATE));
+}
+
 /*
  * mdss_fb_do_ioctl() - MDSS Framebuffer ioctl function
  * @info:	pointer to framebuffer info
@@ -4968,6 +4981,11 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 	if (!pdata || pdata->panel_info.dynamic_switch_pending)
 		return -EPERM;
+
+	if (check_not_supported_ioctl(cmd)) {
+		pr_err("Unsupported ioctl\n");
+		return -EINVAL;
+	}
 
 	atomic_inc(&mfd->ioctl_ref_cnt);
 

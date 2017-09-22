@@ -73,8 +73,18 @@ static void __mdss_mdp_mixer_write_cfg(struct mdss_mdp_mixer *mixer,
 
 static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
 {
-	u64 result = (val * (u64)numer);
-	do_div(result, denom);
+	u64 result = val;
+
+	if (val) {
+		u64 temp = -1UL;
+
+		do_div(temp, val);
+		if (temp > numer) {
+			/* no overflow, so we can do the operation*/
+			result = (val * (u64)numer);
+			do_div(result, denom);
+		}
+	}
 	return result;
 }
 
@@ -3510,7 +3520,8 @@ int mdss_mdp_ctl_setup(struct mdss_mdp_ctl *ctl)
 				if (!ctl->mixer_right) {
 					pr_err("unable to allocate right mixer\n");
 					if (ctl->mixer_left)
-						mdss_mdp_mixer_free(ctl->mixer_left);
+						mdss_mdp_mixer_free(
+							ctl->mixer_left);
 					return -ENOMEM;
 				}
 			}
@@ -3539,7 +3550,8 @@ int mdss_mdp_ctl_setup(struct mdss_mdp_ctl *ctl)
 		}
 	}
 
-	rc = mdss_mdp_pp_default_overlay_config(ctl->mfd, ctl->panel_data, true);
+	rc = mdss_mdp_pp_default_overlay_config(ctl->mfd, ctl->panel_data,
+						true);
 	/*
 	 * Ignore failure of PP config, ctl set-up can succeed.
 	 */
@@ -3907,7 +3919,8 @@ int mdss_mdp_ctl_destroy(struct mdss_mdp_ctl *ctl)
 				     CTL_INTF_EVENT_FLAG_DEFAULT);
 	WARN(rc, "unable to close panel for intf=%d\n", ctl->intf_num);
 
-	(void) mdss_mdp_pp_default_overlay_config(ctl->mfd, ctl->panel_data, false);
+	(void) mdss_mdp_pp_default_overlay_config(ctl->mfd, ctl->panel_data,
+							false);
 
 	sctl = mdss_mdp_get_split_ctl(ctl);
 	if (sctl) {

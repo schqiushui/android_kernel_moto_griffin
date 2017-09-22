@@ -1284,8 +1284,8 @@ try_again:
 	 */
 
 	if (copied < ulen || UDP_SKB_CB(skb)->partial_cov) {
-	        checksum_valid = !udp_lib_checksum_complete(skb);
-        if (!checksum_valid)
+		checksum_valid = !udp_lib_checksum_complete(skb);
+		if (!checksum_valid)
 			goto csum_copy_err;
 	}
 

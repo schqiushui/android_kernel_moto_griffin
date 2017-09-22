@@ -215,6 +215,7 @@ struct sdhci_msm_host {
 	bool pm_qos_group_enable;
 	struct sdhci_msm_pm_qos_irq pm_qos_irq;
 	bool tuning_in_progress;
+	bool pltfm_init_done;
 #if defined(CONFIG_MMC_SDHCI_MSM_DEBUG)
 	struct dentry *debugfs_host_dir;
 	struct dentry *debugfs_drv_types;

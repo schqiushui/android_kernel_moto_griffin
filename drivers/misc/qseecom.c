@@ -2314,7 +2314,13 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 				ret);
 			goto loadapp_err;
 		}
-
+		if (load_img_req.mdt_len > len || load_img_req.img_len > len) {
+			pr_err("ion len %zu is smaller than mdt_len %u or img_len %u\n",
+					len, load_img_req.mdt_len,
+					load_img_req.img_len);
+			ret = -EINVAL;
+			goto loadapp_err;
+		}
 		/* Populate the structure for sending scm call to load image */
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			load_req.qsee_cmd_id = QSEOS_APP_START_COMMAND;
@@ -2887,7 +2893,11 @@ static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
 		}
 		if (req.cmd_id == QSEOS_RPMB_CHECK_PROV_STATUS_COMMAND) {
 			pr_warn("RPMB key status is 0x%x\n", resp.result);
-			*(uint32_t *)req.resp_buf = resp.result;
+			if (put_user(resp.result,
+				(uint32_t __user *)req.resp_buf)) {
+				ret = -EINVAL;
+				goto exit;
+			}
 			ret = 0;
 		}
 		break;
@@ -3655,6 +3665,13 @@ cleanup:
 	}
 	return ret;
 err:
+	for (i = 0; i < MAX_ION_FD; i++)
+		if (data->client.sec_buf_fd[i].is_sec_buf_fd &&
+			data->client.sec_buf_fd[i].vbase)
+			dma_free_coherent(qseecom.pdev,
+				data->client.sec_buf_fd[i].size,
+				data->client.sec_buf_fd[i].vbase,
+				data->client.sec_buf_fd[i].pbase);
 	if (!IS_ERR_OR_NULL(ihandle))
 		ion_free(qseecom.ion_clnt, ihandle);
 	return -ENOMEM;
@@ -4345,9 +4362,9 @@ int qseecom_start_app(struct qseecom_handle **handle,
 		return -EINVAL;
 	}
 
-	if (strlen(app_name) >= MAX_APP_NAME_SIZE) {
+	if (strnlen(app_name, MAX_APP_NAME_SIZE) == MAX_APP_NAME_SIZE) {
 		pr_err("The app_name (%s) with length %zu is not valid\n",
-			app_name, strlen(app_name));
+			app_name, strnlen(app_name, MAX_APP_NAME_SIZE));
 		return -EINVAL;
 	}
 
@@ -5089,6 +5106,12 @@ static int qseecom_load_external_elf(struct qseecom_dev_handle *data,
 	if (ret) {
 		pr_err("Cannot get phys_addr for the Ion Client, ret = %d\n",
 			ret);
+		return ret;
+	}
+	if (load_img_req.mdt_len > len || load_img_req.img_len > len) {
+		pr_err("ion len %zu is smaller than mdt_len %u or img_len %u\n",
+				len, load_img_req.mdt_len,
+				load_img_req.img_len);
 		return ret;
 	}
 	/* Populate the structure for sending scm call to load image */
@@ -6424,10 +6447,15 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 	void *cmd_buf = NULL;
 	size_t cmd_len;
 	struct sglist_info *table = data->sglistinfo_ptr;
+	void *req_ptr = NULL;
+	void *resp_ptr = NULL;
 
 	ret  = __qseecom_qteec_validate_msg(data, req);
 	if (ret)
 		return ret;
+
+	req_ptr = req->req_ptr;
+	resp_ptr = req->resp_ptr;
 
 	/* find app_id & img_name from list */
 	spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
@@ -6446,6 +6474,11 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 		return -ENOENT;
 	}
 
+	req->req_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req->req_ptr);
+	req->resp_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req->resp_ptr);
+
 	if ((cmd_id == QSEOS_TEE_OPEN_SESSION) ||
 			(cmd_id == QSEOS_TEE_REQUEST_CANCELLATION)) {
 		ret = __qseecom_update_qteec_req_buf(
@@ -6457,10 +6490,10 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
 		ireq.app_id = data->client.app_id;
 		ireq.req_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->req_ptr);
+						(uintptr_t)req_ptr);
 		ireq.req_len = req->req_len;
 		ireq.resp_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq.resp_len = req->resp_len;
 		ireq.sglistinfo_ptr = (uint32_t)virt_to_phys(table);
 		ireq.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
@@ -6471,10 +6504,10 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 	} else {
 		ireq_64bit.app_id = data->client.app_id;
 		ireq_64bit.req_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->req_ptr);
+						(uintptr_t)req_ptr);
 		ireq_64bit.req_len = req->req_len;
 		ireq_64bit.resp_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq_64bit.resp_len = req->resp_len;
 		if ((data->client.app_arch == ELFCLASS32) &&
 			((ireq_64bit.req_ptr >=
@@ -6769,6 +6802,60 @@ static void __qseecom_clean_data_sglistinfo(struct qseecom_dev_handle *data)
 	}
 }
 
+
+static int __qseecom_bus_scaling_enable(struct qseecom_dev_handle *data,
+					bool *perf_enabled)
+{
+	int ret = 0;
+
+	if (qseecom.support_bus_scaling) {
+		if (!data->mode) {
+			mutex_lock(&qsee_bw_mutex);
+			__qseecom_register_bus_bandwidth_needs(
+							data, HIGH);
+			mutex_unlock(&qsee_bw_mutex);
+		}
+		ret = qseecom_scale_bus_bandwidth_timer(INACTIVE);
+		if (ret) {
+			pr_err("Failed to set bw\n");
+			ret = -EINVAL;
+			goto exit;
+		}
+	}
+	/*
+	* On targets where crypto clock is handled by HLOS,
+	* if clk_access_cnt is zero and perf_enabled is false,
+	* then the crypto clock was not enabled before sending cmd
+	* to tz, qseecom will enable the clock to avoid service failure.
+	*/
+	if (!qseecom.no_clock_support &&
+		!qseecom.qsee.clk_access_cnt && !data->perf_enabled) {
+		pr_debug("ce clock is not enabled\n");
+		ret = qseecom_perf_enable(data);
+		if (ret) {
+			pr_err("Failed to vote for clock with err %d\n",
+					ret);
+			ret = -EINVAL;
+			goto exit;
+		}
+		*perf_enabled = true;
+	}
+exit:
+	return ret;
+}
+
+static void __qseecom_bus_scaling_disable(struct qseecom_dev_handle *data,
+					bool perf_enabled)
+{
+	if (qseecom.support_bus_scaling)
+		__qseecom_add_bw_scale_down_timer(
+			QSEECOM_SEND_CMD_CRYPTO_TIMEOUT);
+	if (perf_enabled) {
+		qsee_disable_clock_vote(data, CLK_DFAB);
+		qsee_disable_clock_vote(data, CLK_SFPB);
+	}
+}
+
 long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 {
 	int ret = 0;
@@ -6835,50 +6922,14 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
-		if (qseecom.support_bus_scaling) {
-			/* register bus bw in case the client doesn't do it */
-			if (!data->mode) {
-				mutex_lock(&qsee_bw_mutex);
-				__qseecom_register_bus_bandwidth_needs(
-								data, HIGH);
-				mutex_unlock(&qsee_bw_mutex);
-			}
-			ret = qseecom_scale_bus_bandwidth_timer(INACTIVE);
-			if (ret) {
-				pr_err("Failed to set bw.\n");
-				ret = -EINVAL;
-				mutex_unlock(&app_access_lock);
-				break;
-			}
-		}
-		/*
-		* On targets where crypto clock is handled by HLOS,
-		* if clk_access_cnt is zero and perf_enabled is false,
-		* then the crypto clock was not enabled before sending cmd
-		* to tz, qseecom will enable the clock to avoid service failure.
-		*/
-		if (!qseecom.no_clock_support &&
-			!qseecom.qsee.clk_access_cnt && !data->perf_enabled) {
-			pr_debug("ce clock is not enabled!\n");
-			ret = qseecom_perf_enable(data);
-			if (ret) {
-				pr_err("Failed to vote for clock with err %d\n",
-						ret);
-				mutex_unlock(&app_access_lock);
-				ret = -EINVAL;
-				break;
-			}
-			perf_enabled = true;
+		ret = __qseecom_bus_scaling_enable(data, &perf_enabled);
+		if (ret) {
+			mutex_unlock(&app_access_lock);
+			break;
 		}
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_send_cmd(data, argp);
-		if (qseecom.support_bus_scaling)
-			__qseecom_add_bw_scale_down_timer(
-				QSEECOM_SEND_CMD_CRYPTO_TIMEOUT);
-		if (perf_enabled) {
-			qsee_disable_clock_vote(data, CLK_DFAB);
-			qsee_disable_clock_vote(data, CLK_SFPB);
-		}
+		__qseecom_bus_scaling_disable(data, perf_enabled);
 		atomic_dec(&data->ioctl_count);
 		wake_up_all(&data->abort_wq);
 		mutex_unlock(&app_access_lock);
@@ -6897,52 +6948,17 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
-		if (qseecom.support_bus_scaling) {
-			if (!data->mode) {
-				mutex_lock(&qsee_bw_mutex);
-				__qseecom_register_bus_bandwidth_needs(
-								data, HIGH);
-				mutex_unlock(&qsee_bw_mutex);
-			}
-			ret = qseecom_scale_bus_bandwidth_timer(INACTIVE);
-			if (ret) {
-				pr_err("Failed to set bw.\n");
-				mutex_unlock(&app_access_lock);
-				ret = -EINVAL;
-				break;
-			}
-		}
-		/*
-		* On targets where crypto clock is handled by HLOS,
-		* if clk_access_cnt is zero and perf_enabled is false,
-		* then the crypto clock was not enabled before sending cmd
-		* to tz, qseecom will enable the clock to avoid service failure.
-		*/
-		if (!qseecom.no_clock_support &&
-			!qseecom.qsee.clk_access_cnt && !data->perf_enabled) {
-			pr_debug("ce clock is not enabled!\n");
-			ret = qseecom_perf_enable(data);
-			if (ret) {
-				pr_err("Failed to vote for clock with err %d\n",
-						ret);
-				mutex_unlock(&app_access_lock);
-				ret = -EINVAL;
-				break;
-			}
-			perf_enabled = true;
+		ret = __qseecom_bus_scaling_enable(data, &perf_enabled);
+		if (ret) {
+			mutex_unlock(&app_access_lock);
+			break;
 		}
 		atomic_inc(&data->ioctl_count);
 		if (cmd == QSEECOM_IOCTL_SEND_MODFD_CMD_REQ)
 			ret = qseecom_send_modfd_cmd(data, argp);
 		else
 			ret = qseecom_send_modfd_cmd_64(data, argp);
-		if (qseecom.support_bus_scaling)
-			__qseecom_add_bw_scale_down_timer(
-				QSEECOM_SEND_CMD_CRYPTO_TIMEOUT);
-		if (perf_enabled) {
-			qsee_disable_clock_vote(data, CLK_DFAB);
-			qsee_disable_clock_vote(data, CLK_SFPB);
-		}
+		__qseecom_bus_scaling_disable(data, perf_enabled);
 		atomic_dec(&data->ioctl_count);
 		wake_up_all(&data->abort_wq);
 		mutex_unlock(&app_access_lock);
@@ -7344,8 +7360,14 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
+		ret = __qseecom_bus_scaling_enable(data, &perf_enabled);
+		if (ret) {
+			mutex_unlock(&app_access_lock);
+			break;
+		}
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_qteec_open_session(data, argp);
+		__qseecom_bus_scaling_disable(data, perf_enabled);
 		atomic_dec(&data->ioctl_count);
 		wake_up_all(&data->abort_wq);
 		mutex_unlock(&app_access_lock);
@@ -7393,8 +7415,14 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
+		ret = __qseecom_bus_scaling_enable(data, &perf_enabled);
+		if (ret) {
+			mutex_unlock(&app_access_lock);
+			break;
+		}
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_qteec_invoke_modfd_cmd(data, argp);
+		__qseecom_bus_scaling_disable(data, perf_enabled);
 		atomic_dec(&data->ioctl_count);
 		wake_up_all(&data->abort_wq);
 		mutex_unlock(&app_access_lock);
