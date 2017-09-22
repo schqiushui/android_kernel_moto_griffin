@@ -2512,6 +2512,7 @@ static int __dwc3_cleanup_done_trbs(struct dwc3 *dwc, struct dwc3_ep *dep,
 		 */
 		dev_err(dwc->dev, "%s's TRB (%pK) still owned by HW\n",
 				dep->name, trb);
+
 	count = trb->size & DWC3_TRB_SIZE_MASK;
 
 	if (dep->direction) {
