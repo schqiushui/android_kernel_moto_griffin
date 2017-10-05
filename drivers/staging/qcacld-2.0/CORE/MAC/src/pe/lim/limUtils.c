@@ -4080,7 +4080,7 @@ limEnableHT20Protection(tpAniSirGlobal pMac, tANI_U8 enable,
     if(!psessionEntry->htCapability)
         return eSIR_SUCCESS; // this protection  is only for HT stations.
 
-        //overlapping protection configuration check.
+    //overlapping protection configuration check.
     if(overlap) {
     } else {
         //normal protection config check
@@ -4284,7 +4284,7 @@ limEnableHTNonGfProtection(tpAniSirGlobal pMac, tANI_U8 enable,
     if(!psessionEntry->htCapability)
         return eSIR_SUCCESS; // this protection  is only for HT stations.
 
-        //overlapping protection configuration check.
+    //overlapping protection configuration check.
     if(overlap) {
     } else {
         //normal protection config check
@@ -4349,7 +4349,7 @@ limEnableHTLsigTxopProtection(tpAniSirGlobal pMac, tANI_U8 enable,
     if(!psessionEntry->htCapability)
         return eSIR_SUCCESS; // this protection  is only for HT stations.
 
-        //overlapping protection configuration check.
+    //overlapping protection configuration check.
     if(overlap) {
     } else {
         //normal protection config check
@@ -4415,7 +4415,7 @@ limEnableHtRifsProtection(tpAniSirGlobal pMac, tANI_U8 enable,
         return eSIR_SUCCESS; // this protection  is only for HT stations.
 
 
-        //overlapping protection configuration check.
+    //overlapping protection configuration check.
     if(overlap) {
     } else {
          //normal protection config check
@@ -4423,12 +4423,12 @@ limEnableHtRifsProtection(tpAniSirGlobal pMac, tANI_U8 enable,
            !psessionEntry->cfgProtection.rifs) {
             // protection disabled.
             PELOG3(limLog(pMac, LOG3, FL(" protection from Rifs is disabled"));)
-             return eSIR_SUCCESS;
+            return eSIR_SUCCESS;
         } else if (!LIM_IS_AP_ROLE(psessionEntry)) {
            //normal protection config check
            if(!pMac->lim.cfgProtection.rifs) {
               // protection disabled.
-               PELOG3(limLog(pMac, LOG3, FL(" protection from Rifs is disabled"));)
+              PELOG3(limLog(pMac, LOG3, FL(" protection from Rifs is disabled"));)
               return eSIR_SUCCESS;
            }
         }
