@@ -323,29 +323,32 @@ static int mmc_force_err_set(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(mmc_force_err_fops, NULL, mmc_force_err_set, "%llu\n");
 
-static int mmc_host_caps_get(void *data, u64 *val)
+static int mmc_err_state_get(void *data, u64 *val)
 {
 	struct mmc_host *host = data;
 
-	*val = ((u64)host->caps2 << 32) | host->caps;
+	if (!host)
+		return -EINVAL;
+
+	*val = host->err_occurred ? 1 : 0;
 
 	return 0;
 }
 
-static int mmc_host_caps_set(void *data, u64 val)
+static int mmc_err_state_clear(void *data, u64 val)
 {
 	struct mmc_host *host = data;
 
-	mmc_claim_host(host);
-	host->caps = (u32)val;
-	host->caps2 = (u32)(val >> 32);
-	mmc_release_host(host);
+	if (!host)
+		return -EINVAL;
+
+	host->err_occurred = false;
 
 	return 0;
 }
 
-DEFINE_SIMPLE_ATTRIBUTE(mmc_host_caps_fops, mmc_host_caps_get,
-		mmc_host_caps_set, "0x%016llx\n");
+DEFINE_SIMPLE_ATTRIBUTE(mmc_err_state, mmc_err_state_get,
+		mmc_err_state_clear, "%llu\n");
 
 void mmc_add_host_debugfs(struct mmc_host *host)
 {
@@ -387,6 +390,10 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 		&host->cmdq_thist_enabled))
 		goto err_node;
 
+	if (!debugfs_create_file("err_state", S_IRUSR | S_IWUSR, root, host,
+		&mmc_err_state))
+		goto err_node;
+
 #ifdef CONFIG_MMC_RING_BUFFER
 	if (!debugfs_create_file("ring_buffer", S_IRUSR,
 				root, host, &mmc_ring_buffer_fops))
@@ -409,10 +416,6 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 #endif
 	if (!debugfs_create_file("force_error", S_IWUSR, root, host,
 		&mmc_force_err_fops))
-		goto err_node;
-
-	if (!debugfs_create_file("caps", S_IRUSR | S_IWUSR, root, host,
-		&mmc_host_caps_fops))
 		goto err_node;
 
 	return;
