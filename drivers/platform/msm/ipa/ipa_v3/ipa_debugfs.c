@@ -108,7 +108,6 @@ static char *active_clients_buf;
 static s8 ep_reg_idx;
 static void *ipa_ipc_low_buff;
 
-
 static ssize_t ipa3_read_gen_reg(struct file *file, char __user *ubuf,
 		size_t count, loff_t *ppos)
 {
