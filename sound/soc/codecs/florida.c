@@ -2392,13 +2392,13 @@ static int florida_trigger(struct snd_compr_stream *stream, int cmd)
 		ret = wm_adsp_stream_start(
 			florida->compr_info[compr_dev_index].adsp);
 
-		/**
-		 * If the stream has already triggered before the stream
-		 * opened better process any outstanding data
-		 */
-		if (florida->compr_info[compr_dev_index].trig)
-			pending = true;
-		break;
+	/**
+	 * If the stream has already triggered before the stream
+	 * opened better process any outstanding data
+	 */
+	if (florida->compr_info[compr_dev_index].trig)
+		pending = true;
+	    break;
 	case SNDRV_PCM_TRIGGER_STOP:
 		break;
 	default:
