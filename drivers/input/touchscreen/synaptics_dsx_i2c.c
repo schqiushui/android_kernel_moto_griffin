@@ -2880,7 +2880,7 @@ static void synaptics_dsx_sensor_state(struct synaptics_rmi4_data *rmi4_data,
 
 		if (!rmi4_data->suspend_is_wakeable)
 			synaptics_rmi4_irq_enable(rmi4_data, false);
-			break;
+	break;
 
 	case STATE_ACTIVE:
 		if (!rmi4_data->in_bootloader)
@@ -2895,11 +2895,11 @@ static void synaptics_dsx_sensor_state(struct synaptics_rmi4_data *rmi4_data,
 
 		if (gStat.enabled)
 			statistics_start_timekeeping(rmi4_data);
-			break;
+	break;
 
 	case STATE_STANDBY:
 		synaptics_rmi4_irq_enable(rmi4_data, false);
-			break;
+	break;
 
 	case STATE_BL:
 		if (!rmi4_data->in_bootloader)
@@ -2947,7 +2947,7 @@ static void synaptics_dsx_sensor_state(struct synaptics_rmi4_data *rmi4_data,
 
 		if (gStat.enabled)
 			statistics_stop_timekeeping();
-			break;
+	break;
 	}
 
 	pr_info("state change %s -> %s\n",

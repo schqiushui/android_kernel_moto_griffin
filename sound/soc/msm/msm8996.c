@@ -4147,11 +4147,11 @@ static int msm8996_set_bias_level_post(struct snd_soc_card *card,
 				ARIZONA_FLL_SRC_MCLK2, 32768,
 				FLORIDA_SYSCLK_RATE);
 
-			if (ret != 0) {
-				dev_err(dapm->dev, "%s ERROR: %d\n",
-				 __func__, ret);
-				return ret;
-			}
+		if (ret != 0) {
+			dev_err(dapm->dev, "%s ERROR: %d\n",
+			 __func__, ret);
+			return ret;
+		}
 		break;
 	default:
 		break;
