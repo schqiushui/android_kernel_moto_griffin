@@ -95,3 +95,5 @@ obj-$(CONFIG_FSUSB42_MUX) += fsusb42_mux.o
 obj-$(CONFIG_FORCE_FAST_CHARGE)		+= fastcharge/
 obj-$(CONFIG_SENSORS_STML0XX) += stml0xx/
 obj-$(CONFIG_TPS61280) += tps61280.o
+obj-y += motomods/v4l2_hal/
+obj-y += motomods/greybus/
