@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -604,11 +604,13 @@ static void ipa3_wan_msg_free_cb(void *buff, u32 len, u32 type)
 	kfree(buff);
 }
 
-static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
+static int ipa3_send_wan_msg(unsigned long usr_param,
+			uint8_t msg_type, bool is_cache)
 {
 	int retval;
 	struct ipa_wan_msg *wan_msg;
 	struct ipa_msg_meta msg_meta;
+	struct ipa_wan_msg cache_wan_msg;
 
 	wan_msg = kzalloc(sizeof(struct ipa_wan_msg), GFP_KERNEL);
 	if (!wan_msg) {
@@ -622,6 +624,8 @@ static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		return -EFAULT;
 	}
 
+	memcpy(&cache_wan_msg, wan_msg, sizeof(cache_wan_msg));
+
 	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
 	msg_meta.msg_type = msg_type;
 	msg_meta.msg_len = sizeof(struct ipa_wan_msg);
@@ -630,6 +634,25 @@ static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		IPAERR("ipa3_send_msg failed: %d\n", retval);
 		kfree(wan_msg);
 		return retval;
+	}
+
+	if (is_cache) {
+		mutex_lock(&ipa3_ctx->ipa_cne_evt_lock);
+
+		/* cache the cne event */
+		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
+			ipa3_ctx->num_ipa_cne_evt_req].wan_msg,
+			&cache_wan_msg,
+			sizeof(cache_wan_msg));
+
+		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
+			ipa3_ctx->num_ipa_cne_evt_req].msg_meta,
+			&msg_meta,
+			sizeof(struct ipa_msg_meta));
+
+		ipa3_ctx->num_ipa_cne_evt_req++;
+		ipa3_ctx->num_ipa_cne_evt_req %= IPA_MAX_NUM_REQ_CACHE;
+		mutex_unlock(&ipa3_ctx->ipa_cne_evt_lock);
 	}
 
 	return 0;
@@ -1652,21 +1675,21 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_ADD:
-		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD);
+		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD, true);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_DEL:
-		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL);
+		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL, true);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_EMBMS_CONNECTED:
-		retval = ipa3_send_wan_msg(arg, WAN_EMBMS_CONNECT);
+		retval = ipa3_send_wan_msg(arg, WAN_EMBMS_CONNECT, false);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
@@ -2074,6 +2097,12 @@ static void ipa3_q6_avoid_holb(void)
 			if (ep_idx == -1)
 				continue;
 
+			/* from IPA 4.0 pipe suspend is not supported */
+			if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_0)
+				ipahal_write_reg_n_fields(
+				IPA_ENDP_INIT_CTRL_n,
+				ep_idx, &ep_suspend);
+
 			/*
 			 * ipa3_cfg_ep_holb is not used here because we are
 			 * setting HOLB on Q6 pipes, and from APPS perspective
@@ -2086,10 +2115,6 @@ static void ipa3_q6_avoid_holb(void)
 			ipahal_write_reg_n_fields(
 				IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 				ep_idx, &ep_holb);
-
-			ipahal_write_reg_n_fields(
-				IPA_ENDP_INIT_CTRL_n,
-				ep_idx, &ep_suspend);
 		}
 	}
 }
@@ -2577,6 +2602,8 @@ void ipa3_q6_pre_shutdown_cleanup(void)
 	  * on pipe reset procedure
 	  */
 	ipa3_q6_pipe_delay(false);
+
+	ipa3_set_usb_prod_pipe_delay();
 
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 	IPADBG_LOW("Exit with success\n");
@@ -5146,6 +5173,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	mutex_init(&ipa3_ctx->lock);
 	mutex_init(&ipa3_ctx->nat_mem.lock);
 	mutex_init(&ipa3_ctx->q6_proxy_clk_vote_mutex);
+	mutex_init(&ipa3_ctx->ipa_cne_evt_lock);
 
 	idr_init(&ipa3_ctx->ipa_idr);
 	spin_lock_init(&ipa3_ctx->idr_lock);
@@ -5235,7 +5263,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	if (result) {
 		IPAERR("Failed to alloc pkt_init payload\n");
 		result = -ENODEV;
-		goto fail_create_apps_resource;
+		goto fail_allok_pkt_init;
 	}
 
 	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v3_5)
@@ -5245,6 +5273,13 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 
 	init_completion(&ipa3_ctx->init_completion_obj);
 	init_completion(&ipa3_ctx->uc_loaded_completion_obj);
+
+	result = ipa3_dma_setup();
+	if (result) {
+		IPAERR("Failed to setup IPA DMA\n");
+		result = -ENODEV;
+		goto fail_ipa_dma_setup;
+	}
 
 	/*
 	 * For GSI, we can't register the GSI driver yet, as it expects
@@ -5260,7 +5295,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 			if (result) {
 				IPAERR("gsi pre FW loading config failed\n");
 				result = -ENODEV;
-				goto fail_ipa_init_interrupts;
+				goto fail_gsi_pre_fw_load_init;
 			}
 		}
 	} else {
@@ -5271,7 +5306,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 		result = ipa3_post_init(resource_p, ipa_dev);
 		if (result) {
 			IPAERR("ipa3_post_init failed\n");
-			goto fail_ipa_post_init;
+			goto fail_gsi_pre_fw_load_init;
 		}
 	}
 
@@ -5291,13 +5326,13 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 
 	return 0;
 
+
+
 fail_cdev_add:
-fail_ipa_post_init:
-	if (ipa3_bus_scale_table) {
-		msm_bus_cl_clear_pdata(ipa3_bus_scale_table);
-		ipa3_bus_scale_table = NULL;
-	}
-fail_ipa_init_interrupts:
+fail_gsi_pre_fw_load_init:
+	ipa3_dma_shutdown();
+fail_ipa_dma_setup:
+fail_allok_pkt_init:
 	ipa_rm_delete_resource(IPA_RM_RESOURCE_APPS_CONS);
 fail_create_apps_resource:
 	ipa_rm_exit();
@@ -5342,18 +5377,21 @@ fail_flt_rule_cache:
 fail_create_transport_wq:
 	destroy_workqueue(ipa3_ctx->power_mgmt_wq);
 fail_init_hw:
+	ipahal_destroy();
+fail_ipahal:
 	iounmap(ipa3_ctx->mmio);
 fail_remap:
 	ipa3_disable_clks();
-fail_init_active_client:
 	ipa3_active_clients_log_destroy();
+fail_init_active_client:
 fail_clk:
 	if (ipa3_ctx->ipa3_hw_mode != IPA_HW_MODE_VIRTUAL)
 		msm_bus_scale_unregister_client(ipa3_ctx->ipa_bus_hdl);
-fail_ipahal:
-	ipa3_bus_scale_table = NULL;
 fail_bus_reg:
-	ipahal_destroy();
+	if (ipa3_bus_scale_table) {
+		msm_bus_cl_clear_pdata(ipa3_bus_scale_table);
+		ipa3_bus_scale_table = NULL;
+	}
 fail_bind:
 	kfree(ipa3_ctx->ctrl);
 fail_mem_ctrl:

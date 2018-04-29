@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -877,8 +877,6 @@ static void msm_vfe40_cfg_framedrop(void __iomem *vfe_base,
 		msm_camera_io_w(temp | (framedrop_period - 1) << 2,
 		vfe_base + VFE40_WM_BASE(stream_info->wm[i]) + 0xC);
 	}
-
-	msm_camera_io_w_mb(0x1, vfe_base + 0x378);
 }
 
 static void msm_vfe40_clear_framedrop(struct vfe_device *vfe_dev,
@@ -1043,15 +1041,18 @@ static int msm_vfe40_start_fetch_engine(struct vfe_device *vfe_dev,
 				fe_cfg->stream_id);
 		vfe_dev->fetch_engine_info.bufq_handle = bufq_handle;
 
+		mutex_lock(&vfe_dev->buf_mgr->lock);
 		rc = vfe_dev->buf_mgr->ops->get_buf_by_index(
 			vfe_dev->buf_mgr, bufq_handle, fe_cfg->buf_idx, &buf);
 		if (rc < 0 || !buf) {
 			pr_err("%s: No fetch buffer rc= %d\n",
 				__func__, rc);
+			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			return -EINVAL;
 		}
 		mapped_info = buf->mapped_info[0];
 		buf->state = MSM_ISP_BUFFER_STATE_DISPATCHED;
+		mutex_unlock(&vfe_dev->buf_mgr->lock);
 	} else {
 		rc = vfe_dev->buf_mgr->ops->map_buf(vfe_dev->buf_mgr,
 			&mapped_info, fe_cfg->fd);
@@ -1100,15 +1101,18 @@ static int msm_vfe40_start_fetch_engine_multi_pass(struct vfe_device *vfe_dev,
 				fe_cfg->stream_id);
 		vfe_dev->fetch_engine_info.bufq_handle = bufq_handle;
 
+		mutex_lock(&vfe_dev->buf_mgr->lock);
 		rc = vfe_dev->buf_mgr->ops->get_buf_by_index(
 			vfe_dev->buf_mgr, bufq_handle, fe_cfg->buf_idx, &buf);
 		if (rc < 0 || !buf) {
 			pr_err("%s: No fetch buffer rc= %d buf= %pK\n",
 				__func__, rc, buf);
+			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			return -EINVAL;
 		}
 		mapped_info = buf->mapped_info[0];
 		buf->state = MSM_ISP_BUFFER_STATE_DISPATCHED;
+		mutex_unlock(&vfe_dev->buf_mgr->lock);
 	} else {
 		rc = vfe_dev->buf_mgr->ops->map_buf(vfe_dev->buf_mgr,
 			&mapped_info, fe_cfg->fd);
@@ -1206,6 +1210,10 @@ static void msm_vfe40_cfg_fetch_engine(struct vfe_device *vfe_dev,
 	case V4L2_PIX_FMT_P16GBRG10:
 	case V4L2_PIX_FMT_P16GRBG10:
 	case V4L2_PIX_FMT_P16RGGB10:
+	case V4L2_PIX_FMT_P16BGGR12:
+	case V4L2_PIX_FMT_P16GBRG12:
+	case V4L2_PIX_FMT_P16GRBG12:
+	case V4L2_PIX_FMT_P16RGGB12:
 		main_unpack_pattern = 0xB210;
 		break;
 	default:

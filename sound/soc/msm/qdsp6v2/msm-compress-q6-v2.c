@@ -1409,13 +1409,14 @@ static int msm_compr_playback_open(struct snd_compr_stream *cstream)
 		kfree(pdata->dec_params[rtd->dai_link->be_id]);
 		pdata->dec_params[rtd->dai_link->be_id] = NULL;
 		pdata->cstream[rtd->dai_link->be_id] = NULL;
-		runtime->private_data = NULL;
 		kfree(prtd);
+		runtime->private_data = NULL;
 		return -ENOMEM;
 	}
 	pr_debug("%s: session ID %d\n", __func__, prtd->audio_client->session);
 	prtd->audio_client->perf_mode = false;
 	prtd->session_id = prtd->audio_client->session;
+	pdata->is_in_use[rtd->dai_link->be_id] = true;
 
 	return 0;
 }
