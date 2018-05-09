@@ -3644,8 +3644,11 @@ tLimMlmRemoveKeyCnf  mlmRemoveKeyCnf;
 
       goto end;
   }
-  else
-      staIdx = pStaDs->staIndex;
+  else {
+    staIdx = pStaDs->staIndex;
+  }
+
+
 
   psessionEntry->limMlmState = eLIM_MLM_WT_REMOVE_STA_KEY_STATE;
   MTRACE(
