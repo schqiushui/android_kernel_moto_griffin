@@ -664,11 +664,6 @@ WLANSAP_SetScanAcsChannelParams(tsap_Config_t *pConfig,
     pSapCtx->dfs_mode = pConfig->acs_dfs_mode;
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
     pSapCtx->cc_switch_mode = pConfig->cc_switch_mode;
-    pSapCtx->band_switch_enable = pConfig->band_switch_enable;
-    pSapCtx->ap_p2pclient_concur_enable =
-            pConfig->ap_p2pclient_concur_enable;
-    pSapCtx->ch_width_24g_orig = pConfig->ch_width_24g_orig;
-    pSapCtx->ch_width_5g_orig = pConfig->ch_width_5g_orig;
 #endif
     pSapCtx->scanBandPreference = pConfig->scanBandPreference;
     pSapCtx->acsBandSwitchThreshold = pConfig->acsBandSwitchThreshold;
@@ -790,11 +785,6 @@ WLANSAP_StartBss
         pSapCtx->ch_width_orig = pConfig->ch_width_orig;
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
         pSapCtx->cc_switch_mode = pConfig->cc_switch_mode;
-        pSapCtx->band_switch_enable = pConfig->band_switch_enable;
-        pSapCtx->ap_p2pclient_concur_enable =
-                pConfig->ap_p2pclient_concur_enable;
-        pSapCtx->ch_width_24g_orig = pConfig->ch_width_24g_orig;
-        pSapCtx->ch_width_5g_orig = pConfig->ch_width_5g_orig;
 #endif
         pSapCtx->scanBandPreference = pConfig->scanBandPreference;
         pSapCtx->acsBandSwitchThreshold = pConfig->acsBandSwitchThreshold;
@@ -864,7 +854,7 @@ WLANSAP_StartBss
             pSapCtx->csrRoamProfile.csrPersona;
         pmac->sap.sapCtxList[pSapCtx->sessionId].sessionID =
             pSapCtx->sessionId;
-
+#if 0
         // Copy MAC filtering settings to sap context
         pSapCtx->eSapMacAddrAclMode = pConfig->SapMacaddr_acl;
         vos_mem_copy(pSapCtx->acceptMacList, pConfig->accept_mac, sizeof(pConfig->accept_mac));
@@ -873,7 +863,7 @@ WLANSAP_StartBss
         vos_mem_copy(pSapCtx->denyMacList, pConfig->deny_mac, sizeof(pConfig->deny_mac));
         pSapCtx->nDenyMac = pConfig->num_deny_mac;
         sapSortMacList(pSapCtx->denyMacList, pSapCtx->nDenyMac);
-
+#endif
         pSapCtx->beacon_tx_rate = pConfig->beacon_tx_rate;
 
         /* Fill in the event structure for FSM */

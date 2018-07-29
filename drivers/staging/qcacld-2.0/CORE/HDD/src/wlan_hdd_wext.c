@@ -697,48 +697,6 @@ int hdd_priv_get_data(struct iw_point *p_priv_data,
    return 0;
 }
 
-#define WLAN_HDD_MAX_BW_VALUE	5
-
-/**
- * wlan_hdd_validate_mon_channel() - check channel number is valid or not
- * @channel: channel number
- *
- * @return: VOS_STATUS
- */
-VOS_STATUS wlan_hdd_validate_mon_channel(int channel)
-{
-        uint8_t fValidChannel = FALSE, count = 0;
-
-        for (count = RF_CHAN_1; count <= RF_CHAN_165; count++)
-        {
-            if ( channel == rfChannels[count].channelNum )
-            {
-                fValidChannel = TRUE;
-                break;
-            }
-        }
-        if (fValidChannel != TRUE)
-        {
-            hddLog(VOS_TRACE_LEVEL_ERROR,
-                "%s: Invalid Channel [%d]", __func__, channel);
-            return VOS_STATUS_E_FAILURE;
-        }
-        return VOS_STATUS_SUCCESS;
-}
-
-/**
- * wlan_hdd_validate_mon_bw() - check bandwidth value is valid or not
- * @bw: bandwidth value
- *
- * @return: VOS_STATUS
- */
-VOS_STATUS wlan_hdd_validate_mon_bw(int bw)
-{
-        if (bw >= 0 && bw <= WLAN_HDD_MAX_BW_VALUE)
-            return VOS_STATUS_SUCCESS;
-
-        return VOS_STATUS_E_FAILURE;
-}
 
 /**---------------------------------------------------------------------------
 
@@ -6009,10 +5967,19 @@ static int __iw_setint_getnone(struct net_device *dev,
     hdd_wext_state_t  *pWextState =  WLAN_HDD_GET_WEXT_STATE_PTR(pAdapter);
     hdd_context_t     *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
     tSmeConfigParams smeConfig;
+    //BEGIN MOTO thakurr IKSWO-21420
+#if 0
     int *value = (int *)extra;
     int sub_cmd = value[0];
     int set_value = value[1];
     int ret;
+#endif
+    int cmd_len = wrqu->data.length;
+    int *value = (int *) kmalloc(cmd_len+1, GFP_KERNEL);  // Motorola, IKSWO-21420
+    int sub_cmd;
+    int set_value;
+    int ret=0;
+    //END MOTO thakurr IKSWO-21420
     int enable_pbm, enable_mp;
     eHalStatus status;
 
@@ -6021,14 +5988,27 @@ static int __iw_setint_getnone(struct net_device *dev,
 #endif
 
     ENTER();
-
     ret = wlan_hdd_validate_context(pHddCtx);
     if (0 != ret)
-        return ret;
+	 return ret;
 
     INIT_COMPLETION(pWextState->completion_var);
     memset(&smeConfig, 0x00, sizeof(smeConfig));
+    //BEGIN MOTO thakurr IKSWO-21420
+    if(value == NULL)
+	    return -ENOMEM;
 
+    if(copy_from_user((char *) value, (char*)(wrqu->data.pointer), cmd_len)) {
+	    hddLog(VOS_TRACE_LEVEL_FATAL, "%s -- copy_from_user --data pointer failed! bailing",
+			    __FUNCTION__);
+	    kfree(value);
+	    return -EFAULT;
+    }
+
+    sub_cmd = value[0];
+    set_value = value[1];
+    kfree(value);
+    //END MOTO thakurr IKSWO-21420
 
     switch(sub_cmd)
     {
@@ -9779,14 +9759,11 @@ static int __iw_set_host_offload(struct net_device *dev,
         }
     }
 
-    vos_mem_zero(&offloadRequest, sizeof(offloadRequest));
-    offloadRequest.offloadType = pRequest->offloadType;
-    offloadRequest.enableOrDisable = pRequest->enableOrDisable;
-    vos_mem_copy(&offloadRequest.params, &pRequest->params,
-                 sizeof(pRequest->params));
-    vos_mem_copy(&offloadRequest.bssId, &pRequest->bssId.bytes,
-                 VOS_MAC_ADDRESS_LEN);
-
+    /* Execute offload request. The reason that we can copy the request information
+       from the ioctl structure to the SME structure is that they are laid out
+       exactly the same.  Otherwise, each piece of information would have to be
+       copied individually. */
+    memcpy(&offloadRequest, pRequest, wrqu->data.length);
     if (eHAL_STATUS_SUCCESS != sme_SetHostOffload(WLAN_HDD_GET_HAL_CTX(pAdapter),
                                         pAdapter->sessionId, &offloadRequest))
     {
@@ -11387,18 +11364,6 @@ static int __iw_set_two_ints_getnone(struct net_device *dev,
             uint8_t ini_sub_20_ch_width =
                         hdd_ctx->cfg_ini->sub_20_channel_width;
 
-            /* Validate channel Number*/
-            if (wlan_hdd_validate_mon_channel(value[1]) != VOS_STATUS_SUCCESS) {
-                hddLog(LOGE, "Invalid channel for monitor mode");
-                return -EINVAL;
-            }
-
-            /* Validate bandwidth Number*/
-            if (wlan_hdd_validate_mon_bw(value[2]) != VOS_STATUS_SUCCESS) {
-                hddLog(LOGE, "Invalid bandwidth for monitor mode");
-                return -EINVAL;
-            }
-
             roam_profile = vos_mem_malloc(sizeof(tCsrRoamProfile));
             if (roam_profile == NULL){
                 hddLog(LOGE, "Failed to allocate memory");
@@ -11422,7 +11387,6 @@ static int __iw_set_two_ints_getnone(struct net_device *dev,
             hddLog(LOGE, "Set monitor mode Channel %d bandwidth %d sub20 %d",
                    value[1], vht_channel_width,
                    roam_profile->sub20_channelwidth);
-
             hdd_select_mon_cbmode(pAdapter, value[1], &vht_channel_width);
 
             roam_profile->ChannelInfo.ChannelList = &ch_info->channel;

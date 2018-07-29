@@ -2419,10 +2419,11 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
                 staId = event->staId;
                 hdd_fill_station_info(&pHostapdAdapter->aStaInfo[staId],
                                       event);
-                pHostapdAdapter->aStaInfo[staId].ecsa_capable =
-                    pSapEvent->
-                    sapevt.sapStationAssocReassocCompleteEvent.ecsa_capable;
             }
+
+            pHostapdAdapter->aStaInfo[staId].ecsa_capable =
+                pSapEvent->
+                sapevt.sapStationAssocReassocCompleteEvent.ecsa_capable;
 
 #ifdef IPA_OFFLOAD
             if (hdd_ipa_is_enabled(pHddCtx))
@@ -3294,52 +3295,40 @@ static __iw_softap_set_ini_cfg(struct net_device *dev,
                           union iwreq_data *wrqu, char *extra)
 {
     VOS_STATUS vstatus;
-    int errno;
-    hdd_adapter_t *adapter;
-    hdd_context_t *hdd_ctx;
-    char *value;
-    size_t len;
+    int ret = 0; /* success */
+    hdd_adapter_t *pAdapter = (netdev_priv(dev));
+    hdd_context_t *pHddCtx;
 
-    ENTER();
-
-    adapter = netdev_priv(dev);
-    if (adapter == NULL)
+    if (pAdapter == NULL)
     {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                                        "%s: adapter is NULL!", __func__);
+                                        "%s: pAdapter is NULL!", __func__);
         return -EINVAL;
     }
 
-    hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-    errno = wlan_hdd_validate_context(hdd_ctx);
-    if (errno != 0)
-        return errno;
+    pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
+    ret = wlan_hdd_validate_context(pHddCtx);
+    if (ret != 0)
+        return ret;
 
-    /* ensure null termination */
-    len = min_t(size_t, wrqu->data.length, QCSAP_IOCTL_MAX_STR_LEN);
-    value = vos_mem_malloc(len + 1);
-    if (!value)
-        return -ENOMEM;
-
-    vos_mem_copy(value, extra, len);
-    value[len] = '\0';
     VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-              "%s: Received data %s", __func__, value);
+              "%s: Received data %s", __func__, extra);
 
-    vstatus = hdd_execute_global_config_command(hdd_ctx, value);
+    vstatus = hdd_execute_global_config_command(pHddCtx, extra);
 #ifdef WLAN_FEATURE_MBSSID
     if (vstatus == VOS_STATUS_E_PERM) {
-        vstatus = hdd_execute_sap_dyn_config_command(adapter, value);
+        vstatus = hdd_execute_sap_dyn_config_command(pAdapter, extra);
         if (vstatus == VOS_STATUS_SUCCESS)
             VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                    "%s: Stored in Dynamic SAP ini config", __func__);
     }
 #endif
-    vos_mem_free(value);
+    if (VOS_STATUS_SUCCESS != vstatus)
+    {
+        ret = -EINVAL;
+    }
 
-    EXIT();
-
-    return vos_status_to_os_return(vstatus);
+    return ret;
 }
 
 int
@@ -3622,15 +3611,33 @@ static __iw_softap_setparam(struct net_device *dev,
 {
     hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
     tHalHandle hHal;
+    uint8_t *mot_value; //MOT IKSWO-8740 thakurr  Use copy from user
+    int sub_cmd,set_value;
     int *value = (int *)extra;
-    int sub_cmd = value[0];
-    int set_value = value[1];
     eHalStatus status;
     int ret = 0; /* success */
     v_CONTEXT_t pVosContext;
     hdd_context_t *pHddCtx = NULL;
 
     ENTER();
+	//BEGIN MOT thakurr IKSWO-8740 use copy_from_user to avoid junk value
+    if (value[0] < 0 || value[0] > QCSAP_ENABLE_RTS_BURSTING) {
+	    mot_value = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL);
+	    if(copy_from_user((uint8_t *) mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+		    hddLog(LOGE,FL("%s -- copy_from_user --data pointer failed! bailing"),
+				    __func__);
+		    kfree(mot_value);
+		    return -EFAULT;
+	    }
+	    sub_cmd = (int )(*(mot_value + 0));
+	    set_value = (int )(*(mot_value + 1));
+	    kfree(mot_value);
+    } else {
+	    value = (int *)extra;
+	    sub_cmd = value[0];
+	    set_value = value[1];
+    }
+	//END IKSWO-8740
 
     if (NULL == pHostapdAdapter) {
        hddLog(LOGE, FL("hostapd Adapter is null"));
@@ -4334,13 +4341,6 @@ static __iw_softap_setparam(struct net_device *dev,
                                    set_value, PDEV_CMD);
             break;
 
-        case QCSAP_ENABLE_DYNAMIC_BW:
-           hddLog(LOG1, "QCSAP_ENABLE_DYNAMIC_BW val %d", set_value);
-           ret = process_wma_set_command((int)pHostapdAdapter->sessionId,
-                                         (int)WMI_PDEV_PARAM_DYNAMIC_BW,
-                                         set_value, PDEV_CMD);
-            break;
-
         default:
             hddLog(LOGE, FL("Invalid setparam command %d value %d"),
                     sub_cmd, set_value);
@@ -4621,14 +4621,6 @@ static __iw_softap_getparam(struct net_device *dev,
                         VDEV_CMD);
             break;
         }
-    case QCSAP_GET_DYNAMIC_BW:
-        {
-            *value = wma_cli_get_command(pHddCtx->pvosContext,
-                                        (int)pHostapdAdapter->sessionId,
-                                        (int)WMI_PDEV_PARAM_DYNAMIC_BW,
-                                        PDEV_CMD);
-            break;
-        }
     case QCASAP_GET_TEMP_CMD:
         {
             hddLog(VOS_TRACE_LEVEL_INFO, "QCASAP_GET_TEMP_CMD");
@@ -4713,7 +4705,8 @@ int __iw_softap_modify_acl(struct net_device *dev, struct iw_request_info *info,
 #ifndef WLAN_FEATURE_MBSSID
     v_CONTEXT_t pVosContext = hdd_ctx->pvosContext;
 #endif
-    v_BYTE_t *value = (v_BYTE_t*)extra;
+    v_BYTE_t *value = (v_BYTE_t*)kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKSWO-8740
+
     v_U8_t pPeerStaMac[VOS_MAC_ADDR_SIZE];
     int listType, cmd, i;
     int ret;
@@ -4722,8 +4715,10 @@ int __iw_softap_modify_acl(struct net_device *dev, struct iw_request_info *info,
     ENTER();
 
     ret = wlan_hdd_validate_context(hdd_ctx);
-    if (0 != ret)
+    if (0 != ret){
+	kfree(value); //MOT IKSWO-8740
         return ret;
+	}
 
 #ifndef WLAN_FEATURE_MBSSID
     if (NULL == pVosContext) {
@@ -4732,15 +4727,22 @@ int __iw_softap_modify_acl(struct net_device *dev, struct iw_request_info *info,
         return -EINVAL;
     }
 #endif
-
+        //BEGIN MOT thakurr IKSWO-8740 use copy_from_user to avoid junk value
+    if(copy_from_user((uint8_t *) value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+	    hddLog(LOGE,FL("%s -- copy_from_user --data pointer failed! bailing"),
+			    __func__);
+	    kfree(value);
+	    return -EFAULT;
+    }
+	//END IKSWO-8740
     for (i=0; i<VOS_MAC_ADDR_SIZE; i++)
     {
-        pPeerStaMac[i] = *(value+i);
+	 pPeerStaMac[i] = *(value+i);
     }
     listType = (int)(*(value+i));
     i++;
     cmd = (int)(*(value+i));
-
+    kfree(value); //IKSWO-8740
     hddLog(LOG1, "%s: SAP Modify ACL arg0 " MAC_ADDRESS_STR " arg1 %d arg2 %d",
             __func__, MAC_ADDR_ARRAY(pPeerStaMac), listType, cmd);
 
@@ -5067,7 +5069,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 {
     hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
     hdd_context_t *hdd_ctx;
-    v_U8_t *peerMacAddr;
+    v_U8_t *peerMacAddr = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKSWO-8740
     struct tagCsrDelStaParams delStaParams;
     int ret;
 
@@ -5076,22 +5078,29 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
     if (!capable(CAP_NET_ADMIN)) {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                  FL("permission check failed"));
+	kfree(peerMacAddr); //MOT IKSWO-8740
         return -EPERM;
     }
 
     hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
     ret = wlan_hdd_validate_context(hdd_ctx);
-    if (0 != ret)
+    if (0 != ret){
+	kfree(peerMacAddr); //MOT IKSWO-8740
         return ret;
-
+	}
     /* iwpriv tool or framework calls this ioctl with
      * data passed in extra (less than 16 octets);
      */
-    peerMacAddr = (v_U8_t *)(extra);
-
+	        //BEGIN MOT thakurr IKSWO-8740 use copy_from_user to avoid junk value
+ if(copy_from_user((uint8_t *) peerMacAddr, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+            hddLog(LOG1,"%s -- copy_from_user --data pointer failed! bailing",
+                  __func__);
+            kfree(peerMacAddr);
+            return -EFAULT;
+       }
     hddLog(LOG1, "%s data "  MAC_ADDRESS_STR,
            __func__, MAC_ADDR_ARRAY(peerMacAddr));
-
+	//END IKSWO-8740
 
     WLANSAP_PopulateDelStaParams(peerMacAddr,
                    eSIR_MAC_DEAUTH_LEAVING_BSS_REASON,
@@ -5099,6 +5108,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
                    &delStaParams);
 
     hdd_softap_sta_disassoc(pHostapdAdapter, &delStaParams);
+    kfree(peerMacAddr); //MOT IKSWO-8740
     EXIT();
     return 0;
 }
@@ -7128,12 +7138,6 @@ static const struct iw_priv_args hostapd_private_args[] = {
         0,
         "rts_bursting" },
 
-    {   QCSAP_ENABLE_DYNAMIC_BW,
-        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-        0,
-        "cwmenable" },
-
-
   { QCSAP_IOCTL_GETPARAM, 0,
       IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,    "getparam" },
   { QCSAP_IOCTL_GETPARAM, 0,
@@ -7190,8 +7194,6 @@ static const struct iw_priv_args hostapd_private_args[] = {
       IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,    "get_txchainmask" },
   { QCASAP_RX_CHAINMASK_CMD, 0,
       IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,    "get_rxchainmask" },
-  { QCSAP_GET_DYNAMIC_BW, 0,
-      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,    "get_cwmenable" },
   { QCASAP_NSS_CMD, 0,
       IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,    "get_nss" },
   { QCASAP_GET_TEMP_CMD, 0,

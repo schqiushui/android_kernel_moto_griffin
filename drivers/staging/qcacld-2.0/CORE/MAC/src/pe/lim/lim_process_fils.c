@@ -1132,13 +1132,10 @@ bool lim_process_fils_auth_frame2(tpAniSirGlobal mac_ctx,
 
 	if (!pe_session->fils_info)
 		return false;
-
-	if (dot11fUnpackIeRSN(mac_ctx,
+	dot11fUnpackIeRSN(mac_ctx,
 			&rx_auth_frm_body->rsn_ie.info[0],
 			rx_auth_frm_body->rsn_ie.length,
-			&dot11f_ie_rsn) != DOT11F_PARSE_SUCCESS) {
-		return false;
-	}
+			&dot11f_ie_rsn);
 
 	for (i = 0; i < dot11f_ie_rsn.pmkid_count; i++) {
 		if (vos_mem_compare(dot11f_ie_rsn.pmkid[i],

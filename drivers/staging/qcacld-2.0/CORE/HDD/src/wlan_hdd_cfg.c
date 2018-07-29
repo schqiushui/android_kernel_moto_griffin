@@ -48,6 +48,8 @@
   ------------------------------------------------------------------------*/
 
 
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/firmware.h>
 #include <linux/string.h>
 #include <wlan_hdd_includes.h>
@@ -59,8 +61,25 @@
 #include <csrApi.h>
 #include <pmcApi.h>
 #include <wlan_hdd_misc.h>
+#include <crypto/md5.h>
+#include <crypto/hash.h>
 
 #if  defined (WLAN_FEATURE_VOWIFI_11R) || defined (FEATURE_WLAN_ESE) || defined(FEATURE_WLAN_LFR)
+
+#ifdef MOTO_UTAGS_MAC
+#define WIFI_MAC_BOOTARG "androidboot.wifimacaddr="
+#define DEVICE_SERIALNO_BOOTARG "androidboot.serialno="
+#define MACSTRLEN 12
+#define MACSTRCOLON 58
+#define MACADDRESSUSED 1
+#endif
+
+
+struct sdesc {
+   struct shash_desc shash;
+   char ctx[];
+};
+
 static void
 cbNotifySetRoamPrefer5GHz(hdd_context_t *pHddCtx, unsigned long NotifyId)
 {
@@ -1072,13 +1091,6 @@ REG_TABLE_ENTRY g_registry_table[] =
                  CFG_QOS_WMM_MODE_MIN,
                  CFG_QOS_WMM_MODE_MAX ),
 
-   REG_VARIABLE( CFG_STA_LOCAL_EDCA_FOR_ETSI_NAME, WLAN_PARAM_Integer,
-                 hdd_config_t, gStaLocalEDCAEnable,
-                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-                 CFG_STA_LOCAL_EDCA_FOR_ETSI_DEFAULT,
-                 CFG_STA_LOCAL_EDCA_FOR_ETSI_MIN,
-                 CFG_STA_LOCAL_EDCA_FOR_ETSI_MAX ),
-
    REG_VARIABLE( CFG_QOS_WMM_80211E_ENABLED_NAME , WLAN_PARAM_Integer,
                  hdd_config_t, b80211eIsEnabled,
                  VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -1477,27 +1489,6 @@ REG_TABLE_ENTRY g_registry_table[] =
                  CFG_WLAN_MCC_TO_SCC_SWITCH_MODE_DEFAULT,
                  CFG_WLAN_MCC_TO_SCC_SWITCH_MODE_MIN,
                  CFG_WLAN_MCC_TO_SCC_SWITCH_MODE_MAX ),
-
-   REG_VARIABLE( CFG_WLAN_BAND_SWITCH_ENABLE , WLAN_PARAM_Integer,
-                 hdd_config_t, wlan_band_switch_enable,
-                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-                 CFG_WLAN_BAND_SWITCH_ENABLE_DEFAULT,
-                 CFG_WLAN_BAND_SWITCH_ENABLE_MIN,
-                 CFG_WLAN_BAND_SWITCH_ENABLE_MAX ),
-
-   REG_VARIABLE( CFG_WLAN_AP_P2PGO_CONC_ENABLE , WLAN_PARAM_Integer,
-                 hdd_config_t, wlan_ap_p2pgo_conc_enable,
-                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-                 CFG_WLAN_AP_P2PGO_CONC_ENABLE_DEFAULT,
-                 CFG_WLAN_AP_P2PGO_CONC_ENABLE_MIN,
-                 CFG_WLAN_AP_P2PGO_CONC_ENABLE_MAX ),
-
-   REG_VARIABLE( CFG_WLAN_AP_P2PGC_CONC_ENABLE , WLAN_PARAM_Integer,
-                 hdd_config_t, wlan_ap_p2pclient_conc_enable,
-                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-                 CFG_WLAN_AP_P2PGC_CONC_ENABLE_DEFAULT,
-                 CFG_WLAN_AP_P2PGC_CONC_ENABLE_MIN,
-                 CFG_WLAN_AP_P2PGC_CONC_ENABLE_MAX ),
 #endif
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
    REG_VARIABLE( CFG_WLAN_AUTO_SHUTDOWN , WLAN_PARAM_Integer,
@@ -3570,12 +3561,6 @@ REG_TABLE_ENTRY g_registry_table[] =
                  CFG_ENABLE_PACKET_LOG_DEFAULT,
                  CFG_ENABLE_PACKET_LOG_MIN,
                  CFG_ENABLE_PACKET_LOG_MAX ),
-   REG_VARIABLE( CFG_EDCA_FROM_HOSTAPD,  WLAN_PARAM_Integer,
-                 hdd_config_t, enable_hostapd_edca_local,
-                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK,
-                 CFG_EDCA_FROM_HOSTAPD_DEFAULT,
-                 CFG_EDCA_FROM_HOSTAPD_MIN,
-                 CFG_EDCA_FROM_HOSTAPD_MAX),
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
    REG_VARIABLE( CFG_ROAMING_OFFLOAD_NAME,  WLAN_PARAM_Integer,
@@ -3923,13 +3908,6 @@ REG_TABLE_ENTRY g_registry_table[] =
               CFG_ENABLE_SELF_RECOVERY_DEFAULT,
               CFG_ENABLE_SELF_RECOVERY_MIN,
               CFG_ENABLE_SELF_RECOVERY_MAX ),
-
-   REG_VARIABLE( CFG_ENABLE_AC_TXQ_OPTIMIZE, WLAN_PARAM_HexInteger,
-              hdd_config_t, enable_ac_txq_optimize,
-              VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-              CFG_ENABLE_AC_TXQ_OPTIMIZE_DEFAULT,
-              CFG_ENABLE_AC_TXQ_OPTIMIZE_MIN,
-              CFG_ENABLE_AC_TXQ_OPTIMIZE_MAX ),
 
 #ifdef FEATURE_WLAN_FORCE_SAP_SCC
    REG_VARIABLE(CFG_SAP_SCC_CHAN_AVOIDANCE, WLAN_PARAM_Integer,
@@ -4887,13 +4865,6 @@ REG_TABLE_ENTRY g_registry_table[] =
                 CFG_ACTIVE_MODE_OFFLOAD_MIN,
                 CFG_ACTIVE_MODE_OFFLOAD_MAX),
 
-   REG_VARIABLE(CFG_STA_CHANGE_COUNTRYCODE_DYN_NAME, WLAN_PARAM_Integer,
-                hdd_config_t, sta_change_cc_via_beacon,
-                VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-                CFG_STA_CHANGE_COUNTRYCODE_DYN_DEFAULT,
-                CFG_STA_CHANGE_COUNTRYCODE_DYN_DISABLE,
-                CFG_STA_CHANGE_COUNTRYCODE_DYN_ENABLE),
-
    REG_VARIABLE(CFG_SIFS_BURST_DURATION_NAME, WLAN_PARAM_Integer,
                 hdd_config_t, sifs_burst_duration,
                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -5166,35 +5137,6 @@ REG_TABLE_ENTRY g_registry_table[] =
                CFG_SKIP_MAC_CONFIG_DEFAULT,
                CFG_SKIP_MAC_CONFIG_MIN,
                CFG_SKIP_MAC_CONFIG_MAX),
-#ifdef WLAN_FEATURE_DSRC
-  REG_VARIABLE(CFG_OCB_TX_PER_PKT_STATS_ENABLE_NAME, WLAN_PARAM_Integer,
-               hdd_config_t, ocb_tx_per_pkt_stats_enabled,
-               VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-               CFG_OCB_TX_PER_PKT_STATS_ENABLE_DEFAULT,
-               CFG_OCB_TX_PER_PKT_STATS_ENABLE_MIN,
-               CFG_OCB_TX_PER_PKT_STATS_ENABLE_MAX),
-#endif
-
-	REG_VARIABLE(CFG_CCA_THRESHOLD_ENABLE_NAME, WLAN_PARAM_Integer,
-		hdd_config_t, cca_threshold_enable,
-		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-		CFG_CCA_THRESHOLD_ENABLE_DEFAULT,
-		CFG_CCA_THRESHOLD_ENABLE_MIN,
-		CFG_CCA_THRESHOLD_ENABLE_MAX),
-
-	REG_VARIABLE(CFG_CCA_THRESHOLD_2G_NAME, WLAN_PARAM_Integer,
-		hdd_config_t, cca_threshold_2g,
-		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-		CFG_CCA_THRESHOLD_2G_DEFAULT,
-		CFG_CCA_THRESHOLD_2G_MIN,
-		CFG_CCA_THRESHOLD_2G_MAX),
-
-	REG_VARIABLE(CFG_CCA_THRESHOLD_5G_NAME, WLAN_PARAM_Integer,
-		hdd_config_t, cca_threshold_5g,
-		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
-		CFG_CCA_THRESHOLD_5G_DEFAULT,
-		CFG_CCA_THRESHOLD_5G_MIN,
-		CFG_CCA_THRESHOLD_5G_MAX),
 };
 
 
@@ -5394,8 +5336,7 @@ VOS_STATUS hdd_parse_config_ini(hdd_context_t* pHddCtx)
 
    hddLog(LOG1, "%s: qcom_cfg.ini Size %zu", __func__, fw->size);
 
-   buffer = (char*)vos_mem_malloc(fw->size + 1);
-   buffer[fw->size] = '\0';
+   buffer = (char*)vos_mem_malloc(fw->size);
 
    if(NULL == buffer) {
       hddLog(VOS_TRACE_LEVEL_FATAL, "%s: kmalloc failure",__func__);
@@ -5495,9 +5436,6 @@ void print_hdd_cfg(hdd_context_t *pHddCtx)
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gAPAutoShutOff] Value = [%u]", pHddCtx->cfg_ini->nAPAutoShutOff);
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gWlanMccToSccSwitchMode] Value = [%u]", pHddCtx->cfg_ini->WlanMccToSccSwitchMode);
-  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gWlanBandSwitchEnable] Value = [%u]", pHddCtx->cfg_ini->wlan_band_switch_enable);
-  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gWlanApP2pGOConcurrencyEnable] Value = [%u]", pHddCtx->cfg_ini->wlan_ap_p2pgo_conc_enable);
-  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gWlanApP2pClientConcurEnable] Value = [%u]", pHddCtx->cfg_ini->wlan_ap_p2pclient_conc_enable);
 #endif
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gWlanAutoShutdown] Value = [%u]", pHddCtx->cfg_ini->WlanAutoShutdown);
@@ -5809,11 +5747,6 @@ void print_hdd_cfg(hdd_context_t *pHddCtx)
            "Name = [isRoamOffloadEnabled] Value = [%u]",
                    pHddCtx->cfg_ini->isRoamOffloadEnabled);
 #endif
-
-  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-           "Name = [gEnableHostapdEdcaLocal] Value = [%u]",
-                   pHddCtx->cfg_ini->enable_hostapd_edca_local);
-
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
            "Name = [gEnableSifsBurst] Value = [%u]",
                    pHddCtx->cfg_ini->enableSifsBurst);
@@ -5827,10 +5760,6 @@ void print_hdd_cfg(hdd_context_t *pHddCtx)
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
            "Name = [gEnableSelfRecovery] Value = [%u]",
                    pHddCtx->cfg_ini->enableSelfRecovery);
-
-  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
-           "Name = [gEnableAcTxqOptimize] Value = [%u]",
-                   pHddCtx->cfg_ini->enable_ac_txq_optimize);
 
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
             "Name = [gEnableSapSuspend] Value = [%u]",
@@ -6074,11 +6003,6 @@ void print_hdd_cfg(hdd_context_t *pHddCtx)
          CFG_SUB_20_CHANNEL_WIDTH_NAME,
          pHddCtx->cfg_ini->sub_20_channel_width);
 
-  hddLog(LOGE, "Name = [%s] Value = [%u]",
-         CFG_STA_CHANGE_COUNTRYCODE_DYN_NAME ,
-         pHddCtx->cfg_ini->sta_change_cc_via_beacon);
-
-
   hdd_ndp_print_ini_config(pHddCtx);
 
   hddLog(LOG2, "Name = [%s] Value = [%u] ",
@@ -6314,18 +6238,31 @@ static void update_mac_from_string(hdd_context_t *pHddCtx, tCfgIniEntry *macTabl
  */
 VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 {
-   int status, i = 0;
+#ifndef MOTO_UTAGS_MAC
    const struct firmware *fw = NULL;
-   char *line, *buffer = NULL, *temp = NULL;
-   char *name, *value;
+   char *line = NULL;
+   int status, i = 0;
+#else
+   int len = 0;
+   int iteration = 0;
+
+   char *bufferPtr = NULL;
+   char buffer_temp[MACSTRLEN];
+   const char *cmd_line = NULL;
+   struct device_node *chosen_node = NULL;
+#endif
+
+   char *buffer = NULL;
    tCfgIniEntry macTable[VOS_MAX_CONCURRENCY_PERSONA];
    tSirMacAddr customMacAddr;
-
    VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
 
    memset(macTable, 0, sizeof(macTable));
-   status = request_firmware(&fw, WLAN_MAC_FILE, pHddCtx->parent_dev);
 
+   /*Implemenation of QCOM is to read the MAC address from the predefined*/
+   /*location where WLAN MMAC File have the MAC Address                  */
+#ifndef MOTO_UTAGS_MAC
+   status = request_firmware(&fw, WLAN_MAC_FILE, pHddCtx->parent_dev);
    if (status)
    {
       hddLog(VOS_TRACE_LEVEL_WARN, "%s: request_firmware failed %d",
@@ -6339,17 +6276,41 @@ VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
       vos_status = VOS_STATUS_E_INVAL;
       goto config_exit;
    }
+   buffer = (char *)fw->data;
+#else
+   /* Read MACs from bootparams. */
+   chosen_node = of_find_node_by_name(NULL, "chosen");
+   VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                             "%s: get chosen node \n", __func__);
+   if (!chosen_node)
+   {
+       VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                 "%s: get chosen node read failed \n", __func__);
+       goto config_exit;
+   } else {
+       cmd_line = of_get_property(chosen_node, "bootargs", &len);
 
-   temp = buffer = (char *) vos_mem_malloc(fw->size + 1);
-   if (NULL == buffer) {
-      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: unable to allocate memory",__func__);
-      release_firmware(fw);
-      return VOS_STATUS_E_NOMEM;
-   }
+       if (!cmd_line || len <= 0) {
+           VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                               "%s: get wlan MACs bootargs failed \n", __func__);
+           vos_status = VOS_STATUS_E_FAILURE;
+           goto config_exit;
+       } else {
+           buffer = strstr(cmd_line, WIFI_MAC_BOOTARG);
+           if (buffer == NULL) {
+               VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                  "%s: " WIFI_MAC_BOOTARG " bootarg cmd line is null", __func__);
+                vos_status = VOS_STATUS_E_FAILURE;
+                goto config_exit;
+            } else {
+                buffer += strlen(WIFI_MAC_BOOTARG);
+                bufferPtr = buffer;
+            }
+        }
+    }
+#endif
 
-   vos_mem_copy((void*)buffer,(void *)fw->data, fw->size);
-   buffer[fw->size] = '\0';
-
+#ifndef MOTO_UTAGS_MAC
    /* data format:
     * Intf0MacAddress=00AA00BB00CC
     * Intf1MacAddress=00AA00BB00CD
@@ -6394,18 +6355,184 @@ VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
       vos_status = VOS_STATUS_E_INVAL;
       goto config_exit;
    }
-
    update_mac_from_string(pHddCtx, &macTable[0], i);
-
    vos_mem_copy(&customMacAddr,
-                     &pHddCtx->cfg_ini->intfMacAddr[0].bytes[0],
+                  &pHddCtx->cfg_ini->intfMacAddr[0].bytes[0],
+                  sizeof(tSirMacAddr));
+#else
+
+   /* Mac address data format used by qcom:
+    * Intf0MacAddress=00AA00BB00CC
+    * Intf1MacAddress=00AA00BB00CD
+    * xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    * From bootarg we need to strip off : from macaddress
+    */
+   for (iteration = 0; iteration < MACSTRLEN; iteration++) {
+       if (*bufferPtr != MACSTRCOLON) {
+           buffer_temp[iteration] = *bufferPtr;
+       } else {
+           iteration = iteration - 1;
+       }
+       bufferPtr++;
+   }
+   /* Mac address data format used by qcom:
+    * Intf0MacAddress used for 1 macaddress
+    * if gp2pdeviceAdmistered is set to 1
+    * if s020deviceAdmisnited is set to 0
+    * it will use Intf1MacAddress for P2P seprately
+    * Motorola decided to use gp2pdeviceAdmistered = 1 i.e use
+    * locally gerated bin MAC addr for P2P
+    */
+   macTable[0].name = "Intf0MacAddress";
+   macTable[0].value = &buffer_temp[0];
+   update_mac_from_string(pHddCtx, &macTable[0], MACADDRESSUSED);
+   vos_mem_copy(&customMacAddr,
+                     macTable[0].value,
                      sizeof(tSirMacAddr));
+#endif
    sme_SetCustomMacAddr(customMacAddr);
 
 config_exit:
+#ifndef MOTO_UTAGS_MAC
    release_firmware(fw);
-   vos_mem_free(temp);
+#endif
    return vos_status;
+}
+
+VOS_STATUS hdd_update_mac_serial(hdd_context_t *pHddCtx)
+{
+   VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+
+   int len = 0;
+   int serialnoLen = 0;
+
+   char *buffer = NULL;
+   char *bufferPtr = NULL;
+   char *computedMac = NULL;
+   const char *cmd_line = NULL;
+
+   struct device_node *chosen_node = NULL;
+   computedMac = (char*)vos_mem_malloc(VOS_MAC_ADDR_SIZE);
+
+   chosen_node = of_find_node_by_name(NULL, "chosen");
+   VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                            "%s: get chosen node \n", __func__);
+
+   if (!chosen_node)
+   {
+       VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                "%s: get chosen node read failed \n", __func__);
+       goto config_exit;
+   } else {
+       cmd_line = of_get_property(chosen_node, "bootargs", &len);
+       if (!cmd_line || len <= 0) {
+           VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                            "%s: get the barcode bootargs failed \n", __func__);
+           vos_status = VOS_STATUS_E_FAILURE;
+           goto config_exit;
+       } else {
+           buffer = strstr(cmd_line, DEVICE_SERIALNO_BOOTARG);
+           if (buffer == NULL) {
+               VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                     "%s: " DEVICE_SERIALNO_BOOTARG" not present cmd line argc",
+                                                                      __func__);
+               vos_status = VOS_STATUS_E_FAILURE;
+               goto config_exit;
+           } else {
+               buffer += strlen(DEVICE_SERIALNO_BOOTARG);
+               bufferPtr = buffer;
+               while (*bufferPtr != ' ') {
+                   bufferPtr++;
+                   serialnoLen = serialnoLen + 1;
+               }
+           }
+       }
+   }
+   /*Data have been read from boot serial no     */
+   /*Now generate random unique the 6 byte string */
+   if (hdd_generate_random_mac_from_serialno(buffer, serialnoLen,
+                                                                   computedMac)
+                                                         != VOS_STATUS_SUCCESS)
+   {
+       vos_status = VOS_STATUS_E_FAILURE;
+       goto config_exit;
+   }
+
+   vos_mem_copy((v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[0],
+                      (v_U8_t *)computedMac, VOS_MAC_ADDR_SIZE);
+
+config_exit:
+   vos_mem_free(computedMac);
+   return vos_status;
+}
+
+VOS_STATUS hdd_generate_random_mac_from_serialno(char *serialNo, int serialnoLen,
+                                                                  char *macAddr)
+{
+    unsigned int size;
+    struct crypto_shash *md5;
+    struct sdesc *sdescmd5;
+    char *hashBuf = NULL;
+
+    VOS_STATUS cryptoStatus = VOS_STATUS_SUCCESS;
+    hashBuf = (char*)vos_mem_malloc(16);
+
+    /*Motorola OUI*/
+    macAddr[0] = 0xA4;
+    macAddr[1] = 0x70;
+    macAddr[2] = 0xd6;
+
+    md5 = crypto_alloc_shash("md5", 0, 0);
+    if (IS_ERR(md5)) {
+        cryptoStatus = VOS_STATUS_E_FAILURE;
+        VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                "%s: Crypto md5 allocation error \n", __func__);
+        vos_mem_free(hashBuf);
+        return VOS_STATUS_E_FAILURE;
+    }
+
+    size = sizeof(struct shash_desc) + crypto_shash_descsize(md5);
+
+    sdescmd5 = kmalloc(size, GFP_KERNEL);
+    if (!sdescmd5) {
+        cryptoStatus = VOS_STATUS_E_FAILURE;
+        VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                                   "%s: Memory allocationn error \n", __func__);
+        goto crypto_hash_err;
+    }
+
+    sdescmd5->shash.tfm = md5;
+    sdescmd5->shash.flags = 0x0;
+
+    if (crypto_shash_init(&sdescmd5->shash)) {
+        cryptoStatus = VOS_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    if (crypto_shash_update(&sdescmd5->shash, serialNo, serialnoLen)) {
+        cryptoStatus = VOS_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    if (crypto_shash_final(&sdescmd5->shash, &hashBuf[0])) {
+        cryptoStatus = VOS_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    macAddr[3] = hashBuf[0];
+    macAddr[4] = hashBuf[1];
+    macAddr[5] = hashBuf[2];
+
+    VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+             "%X:%X:%X:%X:%X:%X MAC genrated from serial number \n", macAddr[0],
+                                             macAddr[1], macAddr[2], macAddr[3],
+                                                        macAddr[4], macAddr[5]);
+crypto_hash_err:
+    vos_mem_free(hashBuf);
+    crypto_free_shash(md5);
+    kfree(sdescmd5);
+
+    return cryptoStatus;
 }
 
 static VOS_STATUS hdd_apply_cfg_ini( hdd_context_t *pHddCtx, tCfgIniEntry* iniTable, unsigned long entries)
@@ -7918,7 +8045,6 @@ VOS_STATUS hdd_set_sme_config( hdd_context_t *pHddCtx )
 #endif
    smeConfig->csrConfig.Is11eSupportEnabled      = pConfig->b80211eIsEnabled;
    smeConfig->csrConfig.WMMSupportMode           = pConfig->WmmMode;
-   smeConfig->csrConfig.gStaLocalEDCAEnable      = pConfig->gStaLocalEDCAEnable;
    /*
     * -channelBondingMode5GHz is getting updated by SAP
     * so stacbmode will be used for STA connection.
@@ -8099,14 +8225,6 @@ VOS_STATUS hdd_set_sme_config( hdd_context_t *pHddCtx )
    smeConfig->csrConfig.enableTxLdpc = pConfig->enableTxLdpc;
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
    smeConfig->csrConfig.cc_switch_mode = pConfig->WlanMccToSccSwitchMode;
-   smeConfig->csrConfig.band_switch_enable = pConfig->wlan_band_switch_enable;
-   smeConfig->csrConfig.ap_p2pgo_concurrency_enable =
-                        pConfig->wlan_ap_p2pgo_conc_enable;
-   smeConfig->csrConfig.ap_p2pclient_concur_enable =
-                        pConfig->wlan_ap_p2pclient_conc_enable;
-   smeConfig->csrConfig.ch_width_24g_orig = pConfig->nChannelBondingMode24GHz ?
-                        eHT_CHANNEL_WIDTH_40MHZ : eHT_CHANNEL_WIDTH_20MHZ;
-   smeConfig->csrConfig.ch_width_5g_orig = pConfig->vhtChannelWidth;
 #endif
 
    smeConfig->csrConfig.max_amsdu_num = pConfig->max_amsdu_num;
@@ -8221,9 +8339,6 @@ VOS_STATUS hdd_set_sme_config( hdd_context_t *pHddCtx )
 
    smeConfig->csrConfig.sta_auth_retries_for_code17 =
                         pHddCtx->cfg_ini->sta_auth_retries_for_code17;
-
-   smeConfig->sta_change_cc_via_beacon =
-	 pHddCtx->cfg_ini->sta_change_cc_via_beacon;
 
    halStatus = sme_UpdateConfig( pHddCtx->hHal, smeConfig);
    if ( !HAL_STATUS_SUCCESS( halStatus ) )
