@@ -357,9 +357,12 @@ static inline bool vos_is_ptp_tx_opt_enabled(void)
 #endif
 
 #ifdef WLAN_FEATURE_DSRC
-bool vos_is_ocb_tx_per_pkt_stats_enabled(void);
+static inline bool vos_is_ocb_per_pkt_tx_comp_msg_needed(void)
+{
+	return true;
+}
 #else
-static inline bool vos_is_ocb_tx_per_pkt_stats_enabled(void)
+static inline bool vos_is_ocb_per_pkt_tx_comp_msg_needed(void)
 {
 	return false;
 }

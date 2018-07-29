@@ -539,11 +539,8 @@ HIF_PCI_CE_recv_data(struct CE_handle *copyeng, void *ce_context, void *transfer
         adf_os_spin_lock(&pipe_info->completion_freeq_lock);
         compl_state = pipe_info->completion_freeq_head;
 
-        if (!compl_state) {
-            adf_os_spin_unlock(&pipe_info->completion_freeq_lock);
+        if (!compl_state)
             ce_target_reset(sc);
-            break;
-        }
 
         pipe_info->completion_freeq_head = compl_state->next;
         adf_os_spin_unlock(&pipe_info->completion_freeq_lock);
@@ -2866,14 +2863,13 @@ HIFTargetSleepStateAdjust(A_target_id_t targid,
 
                     printk("%s:error, can't wakeup target\n", __func__);
                     hif_msm_pcie_debug_info(sc);
+                    if (!sc->ol_sc->enable_self_recovery)
+                            VOS_BUG(0);
 
                     if (!vos_is_logp_in_progress(VOS_MODULE_ID_VOSS, NULL)) {
                         sc->recovery = true;
                         vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, TRUE);
-                        if (!sc->ol_sc->enable_self_recovery)
-                            vos_device_crashed(sc->dev);
-                        else
-                            vos_wlan_pci_link_down();
+                        vos_wlan_pci_link_down();
                     } else {
                         adf_os_print("%s- %d: SSR is in progress!!!!\n",
                                      __func__, __LINE__);
